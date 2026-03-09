@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { useAuth } from '../../context/AuthContext';
 import { awardEgg } from '../../services/aquariumService';
 
 type Technique = 'Flowtime' | 'Pomodoro' | '52/17 Rule';
@@ -25,6 +26,7 @@ const TECHNIQUE_INFO: Record<Technique, string> = {
 type TimerPhase = 'focus' | 'shortBreak' | 'longBreak';
 
 export default function TimerPage() {
+  const { user } = useAuth();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
@@ -102,7 +104,7 @@ export default function TimerPage() {
       const isLongBreak = newCount % cfg.longBreakAfter === 0;
       setPhase(isLongBreak ? 'longBreak' : 'shortBreak');
       setSeconds(isLongBreak ? cfg.longBreak : cfg.shortBreak);
-      awardEgg();
+      if (user?.uid) awardEgg(user.uid);
       Alert.alert(
         'Focus Session Complete!',
         `Great work! Time for a ${isLongBreak ? 'long' : 'short'} break.\n\n🥚 A fish egg has been added to your Aquarium!`,
@@ -124,7 +126,7 @@ export default function TimerPage() {
   const totalSeconds = TECHNIQUES[technique][phase === 'focus' ? 'focus' : phase === 'shortBreak' ? 'shortBreak' : 'longBreak'];
   const progress = 1 - seconds / totalSeconds;
 
-  const phaseColor = phase === 'focus' ? '#FFD700' : phase === 'shortBreak' ? '#4CAF50' : '#4A90E2';
+  const phaseColor = phase === 'focus' ? '#3DBDAA' : phase === 'shortBreak' ? '#52B788' : '#2E86AB';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -134,10 +136,10 @@ export default function TimerPage() {
           {(Object.keys(TECHNIQUES) as Technique[]).map((t) => (
             <TouchableOpacity
               key={t}
-              style={[styles.techniqueBtn, technique === t && { backgroundColor: '#FFD700' }]}
+              style={[styles.techniqueBtn, technique === t && { backgroundColor: '#3DBDAA' }]}
               onPress={() => handleTechniqueChange(t)}
             >
-              <Text style={[styles.techniqueBtnText, technique === t && { color: '#1E1E1E' }]}>{t}</Text>
+              <Text style={[styles.techniqueBtnText, technique === t && { color: '#0D1B2A' }]}>{t}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -177,15 +179,24 @@ export default function TimerPage() {
             style={[styles.primaryBtn, { backgroundColor: phaseColor }]}
             onPress={running ? stopTimer : startTimer}
           >
-            <Ionicons name={running ? 'pause' : 'play'} size={32} color="#1E1E1E" />
+            <Ionicons name={running ? 'pause' : 'play'} size={32} color="#0D1B2A" />
           </TouchableOpacity>
         </View>
 
+        {/* Dev: 3-second test timer */}
+        <TouchableOpacity
+          style={[styles.testTimerBtn, { borderColor: theme.textSecondary + '44' }]}
+          onPress={() => { stopTimer(); setPhase('focus'); setSeconds(3); }}
+        >
+          <Ionicons name="timer-outline" size={14} color={theme.textSecondary} />
+          <Text style={[styles.testTimerText, { color: theme.textSecondary }]}>3s Test Timer</Text>
+        </TouchableOpacity>
+
         {/* Stats */}
         <View style={[styles.statsCard, { backgroundColor: theme.card }]}>
-          <StatItem label="Completed" value={completedSessions} color="#4CAF50" />
-          <StatItem label="Session Count" value={sessionCount} color="#FFD700" />
-          <StatItem label="Total Focus" value={`${Math.floor(totalFocusSeconds / 60)}m`} color="#4A90E2" />
+          <StatItem label="Completed" value={completedSessions} color="#52B788" />
+          <StatItem label="Session Count" value={sessionCount} color="#3DBDAA" />
+          <StatItem label="Total Focus" value={`${Math.floor(totalFocusSeconds / 60)}m`} color="#2E86AB" />
         </View>
 
         {/* Session History */}
@@ -224,7 +235,7 @@ const styles = StyleSheet.create({
   techniqueRow: { flexDirection: 'row', gap: 8 },
   techniqueBtn: {
     flex: 1, paddingVertical: 10, borderRadius: 10,
-    alignItems: 'center', backgroundColor: '#33333344',
+    alignItems: 'center', backgroundColor: '#2A3F5644',
   },
   techniqueBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
   infoText: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
@@ -239,14 +250,16 @@ const styles = StyleSheet.create({
   progressFill: { height: 6, borderRadius: 3 },
   controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24 },
   primaryBtn: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' },
-  secondaryBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#33333344', justifyContent: 'center', alignItems: 'center' },
+  secondaryBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#2A3F5644', justifyContent: 'center', alignItems: 'center' },
   statsCard: { flexDirection: 'row', borderRadius: 14, padding: 16 },
   statItem: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800' },
   statLabel: { fontSize: 11, color: '#888', marginTop: 2 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
   historyItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10 },
-  historyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFD700' },
+  historyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3DBDAA' },
   historyLabel: { flex: 1, fontSize: 14 },
   historyMeta: { fontSize: 12 },
+  testTimerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
+  testTimerText: { fontSize: 12, fontWeight: '600' },
 });

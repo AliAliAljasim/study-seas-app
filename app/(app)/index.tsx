@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Alert,
 } from 'react-native';
@@ -6,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { checkDailyLoginEgg } from '../../services/aquariumService';
 
 interface Feature {
   title: string;
@@ -17,17 +19,17 @@ interface Feature {
 }
 
 const FEATURES: Feature[] = [
-  { title: 'Focus Timer', subtitle: 'Stay present and focused', icon: 'timer-outline', color: '#5B8DEF', bg: '#EBF1FD', route: '/timer' },
-  { title: 'Aquarium', subtitle: 'Hatch fish from study sessions', icon: 'water-outline', color: '#26C6DA', bg: '#E0F7FA', route: '/aquarium' },
-  { title: 'Calendar', subtitle: 'Plan your study sessions', icon: 'calendar-outline', color: '#4BAE82', bg: '#E8F6F0', route: '/calendar' },
-  { title: 'Tasks', subtitle: 'Organize what needs doing', icon: 'checkmark-done-outline', color: '#7B6CF6', bg: '#EDEAFD', route: '/todo' },
-  { title: 'Progress', subtitle: 'Track your grades and GPA', icon: 'bar-chart-outline', color: '#E87040', bg: '#FDF0EA', route: '/grades' },
+  { title: 'Focus Timer', subtitle: 'Stay present and focused',       icon: 'timer-outline',          color: '#2E86AB', bg: '#E3F2FD', route: '/timer' },
+  { title: 'Aquarium',    subtitle: 'Hatch fish from study sessions', icon: 'fish-outline',            color: '#3DBDAA', bg: '#E0F8F4', route: '/aquarium' },
+  { title: 'Calendar',    subtitle: 'Plan your study sessions',       icon: 'calendar-outline',        color: '#52B788', bg: '#E8F6EE', route: '/calendar' },
+  { title: 'Tasks',       subtitle: 'Organize what needs doing',      icon: 'checkmark-done-outline',  color: '#9381FF', bg: '#EDEAFD', route: '/todo' },
+  { title: 'Progress',    subtitle: 'Track your grades and GPA',      icon: 'bar-chart-outline',       color: '#F4845F', bg: '#FDF0EA', route: '/grades' },
 ];
 
 const DARK_BG: Record<string, string> = {
-  '#EBF1FD': '#1E2D4A',
-  '#E0F7FA': '#0D2A2E',
-  '#E8F6F0': '#1A3028',
+  '#E3F2FD': '#0D2A3A',
+  '#E0F8F4': '#0A2F2A',
+  '#E8F6EE': '#1A3028',
   '#EDEAFD': '#28224A',
   '#FDF0EA': '#4A2E1E',
 };
@@ -49,6 +51,10 @@ export default function HomePage() {
   const router = useRouter();
   const theme = getTheme(isDark);
   const firstName = user?.displayName?.split(' ')[0] ?? 'there';
+
+  useEffect(() => {
+    if (user?.uid) checkDailyLoginEgg(user.uid);
+  }, [user?.uid]);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [

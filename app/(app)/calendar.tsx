@@ -13,11 +13,11 @@ import { generateId } from '../../models/taskModels';
 type EventCategory = 'study' | 'exam' | 'assignment' | 'personal' | 'reminder';
 
 const CATEGORY_COLORS: Record<EventCategory, string> = {
-  study:      '#4A90E2',
-  exam:       '#F44336',
-  assignment: '#FF9800',
-  personal:   '#9370DB',
-  reminder:   '#4CAF50',
+  study:      '#2E86AB',
+  exam:       '#E76F51',
+  assignment: '#F4A261',
+  personal:   '#9381FF',
+  reminder:   '#52B788',
 };
 
 const CATEGORY_LABELS: Record<EventCategory, string> = {
@@ -127,7 +127,7 @@ export default function CalendarPage() {
   markedDates[selectedDate] = {
     ...(markedDates[selectedDate] ?? {}),
     selected: true,
-    selectedColor: '#FFD700',
+    selectedColor: '#3DBDAA',
   };
 
   const dayEvents = events
@@ -143,16 +143,16 @@ export default function CalendarPage() {
     backgroundColor: theme.background,
     calendarBackground: theme.surface,
     textSectionTitleColor: theme.textSecondary,
-    selectedDayBackgroundColor: '#FFD700',
-    selectedDayTextColor: '#1E1E1E',
-    todayTextColor: '#FFD700',
+    selectedDayBackgroundColor: '#3DBDAA',
+    selectedDayTextColor: '#0D1B2A',
+    todayTextColor: '#3DBDAA',
     dayTextColor: theme.text,
     textDisabledColor: theme.textSecondary + '55',
-    dotColor: '#FFD700',
-    selectedDotColor: '#1E1E1E',
-    arrowColor: '#FFD700',
+    dotColor: '#3DBDAA',
+    selectedDotColor: '#0D1B2A',
+    arrowColor: '#3DBDAA',
     monthTextColor: theme.text,
-    indicatorColor: '#FFD700',
+    indicatorColor: '#3DBDAA',
   };
 
   return (
@@ -161,6 +161,7 @@ export default function CalendarPage() {
         {/* Calendar */}
         <View style={[styles.calendarCard, { backgroundColor: theme.surface }]}>
           <Calendar
+            key={isDark ? 'dark' : 'light'}
             onDayPress={(day: { dateString: string }) => setSelectedDate(day.dateString)}
             markedDates={markedDates}
             markingType="multi-dot"
@@ -174,7 +175,7 @@ export default function CalendarPage() {
             {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </Text>
           <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
-            <Ionicons name="add" size={20} color="#1E1E1E" />
+            <Ionicons name="add" size={20} color="#0D1B2A" />
           </TouchableOpacity>
         </View>
 
@@ -203,27 +204,27 @@ export default function CalendarPage() {
       {/* Add/Edit Modal */}
       <Modal visible={modal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#2D2D2D' : '#FFF' }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? '#FFF' : '#000' }]}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? '#152234' : '#FFF' }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? '#E8F4FD' : '#142030' }]}>
               {editing ? 'Edit Event' : 'New Event'}
             </Text>
             <TextInput
-              style={[styles.input, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#444' : '#DDD' }]}
+              style={[styles.input, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0' }]}
               placeholder="Event title"
-              placeholderTextColor="#666"
+              placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
               value={title}
               onChangeText={setTitle}
             />
             <TextInput
-              style={[styles.input, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#444' : '#DDD', height: 80 }]}
+              style={[styles.input, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0', height: 80 }]}
               placeholder="Description (optional)"
-              placeholderTextColor="#666"
+              placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
               value={desc}
               onChangeText={setDesc}
               multiline
             />
             {/* Category */}
-            <Text style={[styles.label, { color: isDark ? '#AAA' : '#666' }]}>Category</Text>
+            <Text style={[styles.label, { color: isDark ? '#7AAFC8' : '#5A7E9B' }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {(Object.keys(CATEGORY_LABELS) as EventCategory[]).map((c) => (
@@ -240,17 +241,17 @@ export default function CalendarPage() {
             {/* Times */}
             <View style={styles.timeRow}>
               <TextInput
-                style={[styles.timeInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#444' : '#DDD' }]}
+                style={[styles.timeInput, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0' }]}
                 placeholder="Start (e.g. 14:00)"
-                placeholderTextColor="#666"
+                placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
                 value={startTime}
                 onChangeText={setStartTime}
               />
-              <Text style={{ color: isDark ? '#FFF' : '#000', marginHorizontal: 8 }}>→</Text>
+              <Text style={{ color: isDark ? '#7AAFC8' : '#5A7E9B', marginHorizontal: 8 }}>→</Text>
               <TextInput
-                style={[styles.timeInput, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#444' : '#DDD' }]}
+                style={[styles.timeInput, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0' }]}
                 placeholder="End (e.g. 16:00)"
-                placeholderTextColor="#666"
+                placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
                 value={endTime}
                 onChangeText={setEndTime}
               />
@@ -315,7 +316,7 @@ const styles = StyleSheet.create({
   calendarCard: { borderRadius: 16, overflow: 'hidden' },
   dayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dayTitle: { fontSize: 16, fontWeight: '700' },
-  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
+  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#3DBDAA', justifyContent: 'center', alignItems: 'center' },
   emptyCard: { borderRadius: 14, padding: 24, alignItems: 'center', gap: 8 },
   emptyText: { fontSize: 14 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 8 },
@@ -341,12 +342,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
     borderWidth: 1.5, backgroundColor: 'transparent',
   },
-  chipText: { fontSize: 12, color: '#888' },
+  chipText: { fontSize: 12, color: '#7AAFC8' },
   timeRow: { flexDirection: 'row', alignItems: 'center' },
   timeInput: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14 },
   modalBtns: { flexDirection: 'row', gap: 12 },
-  cancelBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#33333366', alignItems: 'center' },
-  cancelBtnText: { color: '#AAA', fontWeight: '600' },
+  cancelBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#2A3F5644', alignItems: 'center' },
+  cancelBtnText: { color: '#7AAFC8', fontWeight: '600' },
   confirmBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
   confirmBtnText: { color: '#FFF', fontWeight: '700' },
 });

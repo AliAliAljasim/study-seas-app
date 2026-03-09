@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, Alert, Animated, Easing,
+  SafeAreaView, Alert, Animated, Easing, Modal,
 } from 'react-native';
 import Svg, {
   Path, Ellipse, Circle, Rect, Defs,
@@ -10,11 +10,12 @@ import Svg, {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
-import { getEggs, getOwnedFish, hatchEgg, awardEgg, loadSamplePack } from '../../services/aquariumService';
+import { useAuth } from '../../context/AuthContext';
+import { getEggs, getOwnedFish, hatchEgg, awardEgg, loadSamplePack, claimStarterEgg, clearOwnedFish, skipEggTimer } from '../../services/aquariumService';
 import {
   FishEgg, OwnedFish, FishSpecies,
   FISH_SPECIES, RARITY_COLORS, RARITY_LABELS, FishRarity,
-  FishHabitat, HABITAT_LABELS,
+  FishHabitat, HABITAT_LABELS, BiomeKey, computeUnlockedBiomes,
 } from '../../models/aquariumModels';
 import FishSVG, { SPECIES_VISUALS, getFishDimensions } from '../../components/FishSVG';
 
@@ -586,36 +587,52 @@ function AbyssBackground({ width, height, isDark, uid }: BgProps) {
       <Circle cx={width*0.14} cy={height*0.36} r={1.5} fill="rgba(255,255,255,0.10)" />
       {/* Whale belly lighter */}
       <Path d={`M ${width*0.12},${height*0.40} Q ${width*0.30},${height*0.44} ${width*0.50},${height*0.42} Q ${width*0.62},${height*0.41} ${width*0.68},${height*0.42}`} stroke="rgba(255,255,255,0.05)" strokeWidth={2} fill="none" />
-      {/* Bioluminescent area glows */}
-      <Ellipse cx={width*0.22} cy={height*0.72} rx={44} ry={30} fill={`url(#${gG1})`} />
-      <Ellipse cx={width*0.75} cy={height*0.52} rx={38} ry={24} fill={`url(#${gG2})`} />
-      <Ellipse cx={width*0.48} cy={height*0.88} rx={32} ry={20} fill={`url(#${gG1})`} opacity={0.75} />
-      <Ellipse cx={width*0.58} cy={height*0.20} rx={20} ry={14} fill={`url(#${gG2})`} opacity={0.50} />
-      {/* Primary thermal vent (center) */}
-      <Path d={`M ${width*0.44},${height} L ${width*0.46},${height*0.74} L ${width*0.48},${height} Z`} fill={isDark ? '#1E0E00' : '#2E1A00'} />
-      <Path d={`M ${width*0.52},${height} L ${width*0.54},${height*0.76} L ${width*0.56},${height} Z`} fill={isDark ? '#1E0E00' : '#2E1A00'} />
-      <Ellipse cx={width*0.50} cy={height*0.76} rx={28} ry={18} fill={`url(#${gVent})`} />
-      <Circle  cx={width*0.46} cy={height*0.75} r={5} fill="#FF6D00" opacity={0.28} />
-      <Circle  cx={width*0.54} cy={height*0.77} r={4} fill="#FF8C00" opacity={0.22} />
-      {/* Secondary vent left */}
-      <Path d={`M ${width*0.17},${height} L ${width*0.19},${height*0.84} L ${width*0.21},${height} Z`} fill={isDark ? '#1E0E00' : '#2E1A00'} />
-      <Ellipse cx={width*0.19} cy={height*0.85} rx={16} ry={10} fill={`url(#${gVent2})`} />
-      <Circle  cx={width*0.19} cy={height*0.85} r={3} fill="#FF6D00" opacity={0.20} />
+      {/* Bioluminescent area glows (mid-water) */}
+      <Ellipse cx={width*0.22} cy={height*0.55} rx={44} ry={30} fill={`url(#${gG1})`} />
+      <Ellipse cx={width*0.75} cy={height*0.42} rx={38} ry={24} fill={`url(#${gG2})`} />
+      <Ellipse cx={width*0.58} cy={height*0.18} rx={20} ry={14} fill={`url(#${gG2})`} opacity={0.50} />
       {/* Anglerfish glow — faint lure light */}
-      <Circle cx={width*0.72} cy={height*0.64} r={8} fill="#69F0AE" opacity={0.14} />
-      <Circle cx={width*0.72} cy={height*0.64} r={4} fill="#69F0AE" opacity={0.22} />
-      <Circle cx={width*0.72} cy={height*0.62} r={2} fill="#A5F3C8" opacity={0.50} />
-      {/* Rocky floor silhouettes */}
-      <Ellipse cx={width*0.08}  cy={height+6} rx={40} ry={24} fill={rockColor} />
-      <Ellipse cx={width*0.30}  cy={height+4} rx={36} ry={20} fill={rockMid}   />
-      <Ellipse cx={width*0.52}  cy={height+8} rx={48} ry={22} fill={rockDark}  />
-      <Ellipse cx={width*0.75}  cy={height+4} rx={38} ry={20} fill={rockMid}   />
-      <Ellipse cx={width*0.94}  cy={height+5} rx={34} ry={18} fill={rockColor} />
-      {/* Bioluminescent dots — dense scatter */}
-      {([[0.22,0.90,3.0,'#00E5FF',0.38],[0.32,0.86,2.0,'#69F0AE',0.42],[0.65,0.88,2.5,'#00E5FF',0.33],[0.76,0.85,2.0,'#7C4DFF',0.40],
-         [0.14,0.38,2.5,'#00E5FF',0.55],[0.36,0.58,2.0,'#7C4DFF',0.50],[0.60,0.28,3.0,'#00E5FF',0.42],[0.80,0.68,2.0,'#69F0AE',0.52],
-         [0.44,0.14,1.5,'#7C4DFF',0.48],[0.68,0.82,2.0,'#00E5FF',0.42],[0.27,0.52,1.5,'#69F0AE',0.40],[0.86,0.24,2.0,'#7C4DFF',0.38],
-         [0.50,0.50,1.8,'#00E5FF',0.35],[0.42,0.72,1.5,'#69F0AE',0.45],[0.78,0.44,1.8,'#7C4DFF',0.38],[0.18,0.64,1.5,'#00E5FF',0.42],
+      <Circle cx={width*0.72} cy={height*0.55} r={8} fill="#69F0AE" opacity={0.14} />
+      <Circle cx={width*0.72} cy={height*0.55} r={4} fill="#69F0AE" opacity={0.22} />
+      <Circle cx={width*0.72} cy={height*0.53} r={2} fill="#A5F3C8" opacity={0.50} />
+      {/* ── ABYSS FLOOR (at height - 55) ── */}
+      {(() => {
+        const fy = height - Math.round(height / 8);
+        return (<>
+          {/* Floor glow from thermal heat */}
+          <Ellipse cx={width*0.50} cy={fy+10} rx={width*0.55} ry={32} fill={`url(#${gVent})`} opacity={0.45} />
+          {/* Jagged rocky floor */}
+          <Path d={`M 0,${fy+8} Q ${width*0.08},${fy-4} ${width*0.16},${fy+6} Q ${width*0.24},${fy+14} ${width*0.32},${fy+2} Q ${width*0.40},${fy-8} ${width*0.50},${fy+4} Q ${width*0.60},${fy+12} ${width*0.68},${fy-2} Q ${width*0.76},${fy-10} ${width*0.84},${fy+6} Q ${width*0.92},${fy+14} ${width},${fy+2} L ${width},${height} L 0,${height} Z`} fill={rockColor} />
+          {/* Floor mid layer for depth */}
+          <Path d={`M 0,${fy+18} Q ${width*0.15},${fy+12} ${width*0.30},${fy+20} Q ${width*0.50},${fy+28} ${width*0.70},${fy+18} Q ${width*0.85},${fy+10} ${width},${fy+22} L ${width},${height} L 0,${height} Z`} fill={rockDark} opacity={0.85} />
+          {/* Rock formations sitting on floor */}
+          <Path d={`M ${width*0.18},${fy+6} Q ${width*0.22},${fy-18} ${width*0.26},${fy+4} Z`} fill={rockMid} />
+          <Path d={`M ${width*0.60},${fy+4} Q ${width*0.64},${fy-22} ${width*0.70},${fy+2} Z`} fill={rockColor} />
+          <Path d={`M ${width*0.78},${fy+6} Q ${width*0.80},${fy-12} ${width*0.84},${fy+4} Z`} fill={rockMid} />
+          {/* Floor cracks */}
+          <Path d={`M ${width*0.38},${fy+10} L ${width*0.42},${fy+20} L ${width*0.40},${fy+30}`} stroke={isDark ? '#1A2E3E' : '#243848'} strokeWidth={1} fill="none" opacity={0.6} />
+          <Path d={`M ${width*0.55},${fy+14} L ${width*0.58},${fy+24}`} stroke={isDark ? '#1A2E3E' : '#243848'} strokeWidth={0.8} fill="none" opacity={0.5} />
+          {/* Primary thermal vent on floor */}
+          <Path d={`M ${width*0.44},${fy+8} L ${width*0.46},${fy-28} L ${width*0.48},${fy+6} Z`} fill={isDark ? '#2A1200' : '#3A1A00'} />
+          <Path d={`M ${width*0.52},${fy+6} L ${width*0.54},${fy-24} L ${width*0.56},${fy+8} Z`} fill={isDark ? '#2A1200' : '#3A1A00'} />
+          <Ellipse cx={width*0.50} cy={fy-20} rx={22} ry={14} fill={`url(#${gVent})`} />
+          <Circle  cx={width*0.46} cy={fy-22} r={4} fill="#FF6D00" opacity={0.30} />
+          <Circle  cx={width*0.54} cy={fy-20} r={3} fill="#FF8C00" opacity={0.24} />
+          {/* Secondary vent left on floor */}
+          <Path d={`M ${width*0.20},${fy+10} L ${width*0.22},${fy-14} L ${width*0.24},${fy+8} Z`} fill={isDark ? '#2A1200' : '#3A1A00'} />
+          <Ellipse cx={width*0.22} cy={fy-10} rx={13} ry={8} fill={`url(#${gVent2})`} />
+          <Circle  cx={width*0.22} cy={fy-10} r={2.5} fill="#FF6D00" opacity={0.22} />
+          {/* Floor glow dots */}
+          <Circle cx={width*0.30} cy={fy+4}  r={2.5} fill="#00E5FF" opacity={0.40} />
+          <Circle cx={width*0.48} cy={fy+8}  r={2.0} fill="#69F0AE" opacity={0.38} />
+          <Circle cx={width*0.65} cy={fy+4}  r={2.5} fill="#00E5FF" opacity={0.36} />
+          <Circle cx={width*0.82} cy={fy+6}  r={1.8} fill="#7C4DFF" opacity={0.42} />
+        </>);
+      })()}
+      {/* Bioluminescent dots — mid-water only (above floor) */}
+      {([[0.14,0.35,2.5,'#00E5FF',0.55],[0.36,0.50,2.0,'#7C4DFF',0.50],[0.60,0.25,3.0,'#00E5FF',0.42],[0.80,0.60,2.0,'#69F0AE',0.52],
+         [0.44,0.14,1.5,'#7C4DFF',0.48],[0.27,0.46,1.5,'#69F0AE',0.40],[0.86,0.22,2.0,'#7C4DFF',0.38],
+         [0.50,0.44,1.8,'#00E5FF',0.35],[0.42,0.62,1.5,'#69F0AE',0.45],[0.78,0.38,1.8,'#7C4DFF',0.38],[0.18,0.58,1.5,'#00E5FF',0.42],
       ] as [number,number,number,string,number][]).map(([x,y,r,fill,op],i) => (
         <Circle key={i} cx={width*x} cy={height*y} r={r} fill={fill} opacity={op} />
       ))}
@@ -712,14 +729,15 @@ function Bubble({ tankWidth, delay, startY, color }: {
 
 // ─── Movement styles ──────────────────────────────────
 
-type MovementStyle = 'swim' | 'crawl' | 'drift' | 'glide' | 'hover' | 'sink' | 'undulate';
+type MovementStyle = 'swim' | 'crawl' | 'drift' | 'glide' | 'hover' | 'sink' | 'undulate' | 'vertical';
 
 // Per-species movement override (default = 'swim')
 const SPECIES_MOVEMENT: Record<string, MovementStyle> = {
-  // Trash — passive floaters / sinkers
-  worm:                  'drift',
-  apple_core:            'drift',
-  bottle:                'drift',
+  // Trash — rest on the floor
+  worm:                  'crawl',
+  apple_core:            'sink',
+  bottle:                'sink',
+  lure:                  'sink',
   rusty_can:             'sink',
   seaweed:               'sink',
   // Ground crawlers — linear horizontal, no bob
@@ -748,6 +766,8 @@ const SPECIES_MOVEMENT: Record<string, MovementStyle> = {
   // Undulators — rapid vertical oscillation while moving
   moray_eel:             'undulate',
   ribbon_eel:            'undulate',
+  // Otter — bobs up and down at the surface
+  otter:                 'vertical',
 };
 
 // ─── Swimming fish ────────────────────────────────────
@@ -775,7 +795,7 @@ function SwimmingFish({ speciesId, tankWidth, yPosition, speed, fishHeight, move
   const scaleX = useRef(new Animated.Value(startRight ? 1 : -1)).current;
 
   useEffect(() => {
-    if (maxX <= 0) return;
+    if (movement !== 'vertical' && maxX <= 0) return;
 
     // ── Vertical bob — amplitude and period per movement style ──
     type BobCfg = { amp: number; period: number };
@@ -786,6 +806,7 @@ function SwimmingFish({ speciesId, tankWidth, yPosition, speed, fishHeight, move
       movement === 'sink'     ? { amp: 2,  period: 3600 } :
       movement === 'hover'    ? { amp: 6,  period: 1300 } :
       movement === 'undulate' ? { amp: 10, period: 420  } :
+      movement === 'vertical' ? { amp: 0,  period: 0    } :
       /* crawl */               { amp: 0,  period: 0    };
 
     const bob = bobCfg.amp > 0
@@ -799,6 +820,24 @@ function SwimmingFish({ speciesId, tankWidth, yPosition, speed, fishHeight, move
     // ── Horizontal movement ──
     if (movement === 'sink') {
       return () => { bob?.stop(); };
+    }
+
+    if (movement === 'vertical') {
+      const topY    = 12 - yPosition;
+      const bottomY = Math.max(topY + 20, (140 - fishHeight) - yPosition);
+      let goingDown = true;
+      const moveVert = () => {
+        Animated.timing(posY, {
+          toValue: goingDown ? bottomY : topY,
+          duration: 2800 + Math.random() * 1200,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }).start(({ finished }) => {
+          if (finished) { goingDown = !goingDown; moveVert(); }
+        });
+      };
+      moveVert();
+      return () => { posY.stopAnimation(); };
     }
 
     if (movement === 'hover') {
@@ -897,45 +936,44 @@ const BIOME_FISH_LAYER: Record<FishHabitat, { yMin: number; yMax: number; size: 
   depths:  { yMin: 15,  yMax: 160, size: 32 },
 };
 
-type BiomeKey = 'shallows' | 'open_water' | 'coral_reef' | 'sandy_bed' | 'shipwreck' | 'deep_reef' | 'abyss';
 type BiomeCfg = {
   id: BiomeKey; name: string; habitat: FishHabitat;
-  habitatSlot: number; speciesIds: readonly string[]; dotColor: string;
+  unlockHint: string; speciesIds: readonly string[]; dotColor: string;
 };
 
 const BIOME_CONFIGS: BiomeCfg[] = [
-  { id: 'shallows',   name: 'Sunlit Shallows', habitat: 'surface', habitatSlot: 0, dotColor: '#4DD0E1',
-    speciesIds: ['worm','apple_core','bottle','lure','goldfish','guppy','bluegill'] },
-  { id: 'open_water', name: 'Open Water',      habitat: 'surface', habitatSlot: 1, dotColor: '#29B6F6',
+  { id: 'shallows',   name: 'Sunlit Shallows', habitat: 'surface', unlockHint: '',                               dotColor: '#4DD0E1',
+    speciesIds: ['worm','apple_core','bottle','lure','goldfish','guppy','bluegill','otter'] },
+  { id: 'open_water', name: 'Open Water',      habitat: 'surface', unlockHint: 'Collect 2 unique surface fish',   dotColor: '#29B6F6',
     speciesIds: ['silverjaw_minnow','tadpole','anchovy','bass','yellow_perch','neon_tetra','surgeonfish'] },
-  { id: 'coral_reef', name: 'Coral Reef',      habitat: 'surface', habitatSlot: 2, dotColor: '#FF7043',
+  { id: 'coral_reef', name: 'Coral Reef',      habitat: 'surface', unlockHint: 'Collect 4 unique surface fish',   dotColor: '#FF7043',
     speciesIds: ['jellyfish','carp','rainbow_trout','salmon','angelfish','tuna','arowana'] },
-  { id: 'sandy_bed',  name: 'Sandy Bed',       habitat: 'floor',   habitatSlot: 0, dotColor: '#FFB74D',
+  { id: 'sandy_bed',  name: 'Sandy Bed',       habitat: 'floor',   unlockHint: 'Collect 6 unique surface fish',   dotColor: '#FFB74D',
     speciesIds: ['rusty_can','seaweed','mussel','goby','shrimp','starfish','catfish'] },
-  { id: 'shipwreck',  name: 'Shipwreck',       habitat: 'floor',   habitatSlot: 1, dotColor: '#8D6E63',
+  { id: 'shipwreck',  name: 'Shipwreck',       habitat: 'floor',   unlockHint: 'Collect 14 unique fish total',    dotColor: '#8D6E63',
     speciesIds: ['clownfish','yellow_tang','flounder','crab_dungeness','coral','seashell','sand_dollar'] },
-  { id: 'deep_reef',  name: 'Deep Reef',       habitat: 'floor',   habitatSlot: 2, dotColor: '#9C27B0',
+  { id: 'deep_reef',  name: 'Deep Reef',       habitat: 'floor',   unlockHint: 'Collect 16 unique fish total',    dotColor: '#9C27B0',
     speciesIds: ['seahorse','pufferfish','blue_groper','napoleon_wrasse','purple_tang','blue_angelfish','crab_blue'] },
-  { id: 'abyss',      name: 'Midnight Abyss',  habitat: 'depths',  habitatSlot: 0, dotColor: '#7C4DFF',
+  { id: 'abyss',      name: 'Midnight Abyss',  habitat: 'depths',  unlockHint: 'Collect 10 unique floor fish',    dotColor: '#7C4DFF',
     speciesIds: ['ribbon_eel','anglerfish','pearl','crab_king','great_white_shark','moray_eel','stingray','upside_down_jellyfish'] },
 ];
 
 const DARK_BIOMES      = new Set<BiomeKey>(['deep_reef', 'abyss']);
 const GROUNDED_BIOMES  = new Set<BiomeKey>(['shallows', 'coral_reef', 'sandy_bed', 'shipwreck']);
 
-function BiomeTank({ biome, fish, isDark, locked, uid }: {
+function BiomeTank({ biome, fish, isDark, locked, uid, tankH = BIOME_HEIGHT }: {
   biome: BiomeCfg; fish: OwnedFish[]; isDark: boolean;
-  locked?: boolean; uid: string;
+  locked?: boolean; uid: string; tankH?: number;
 }) {
   const [tankWidth, setTankWidth] = useState(0);
 
   const layer = BIOME_FISH_LAYER[biome.habitat];
   const fishConfigs = useMemo(() => fish.map((f) => {
     const movement: MovementStyle = SPECIES_MOVEMENT[f.speciesId] ?? 'swim';
-    const floorSeatY = BIOME_HEIGHT - BIOME_FLOOR - layer.size + 14;
+    const floorSeatY = tankH - Math.round(tankH / 8) - layer.size;
     let yPosition: number;
     if (movement === 'crawl' || movement === 'sink') {
-      yPosition = biome.habitat === 'floor' ? floorSeatY : layer.yMax - layer.size;
+      yPosition = floorSeatY;
     } else if (movement === 'drift' && biome.habitat === 'surface') {
       yPosition = 6 + Math.random() * 18;
     } else {
@@ -944,12 +982,12 @@ function BiomeTank({ biome, fish, isDark, locked, uid }: {
     return { id: f.id, speciesId: f.speciesId, yPosition, speed: 6000 + Math.random() * 6000, fishHeight: layer.size, movement };
   }), [fish.map((f) => f.id).join(',')]);
 
-  const floorY      = BIOME_HEIGHT - BIOME_FLOOR;
+  const floorY      = tankH - BIOME_FLOOR;
   const plantColor1 = isDark ? '#0A3020' : '#1B5E20';
   const plantColor2 = isDark ? '#155232' : '#2E7D32';
   const isDarkBiome     = DARK_BIOMES.has(biome.id);
   const isGrounded      = GROUNDED_BIOMES.has(biome.id);
-  const bubbleStart = biome.habitat === 'floor' ? floorY - 20 : BIOME_HEIGHT - 20;
+  const bubbleStart = biome.habitat === 'floor' ? floorY - 20 : tankH - 20;
 
   const BgMap = {
     shallows:   ShallowsBackground,
@@ -972,14 +1010,14 @@ function BiomeTank({ biome, fish, isDark, locked, uid }: {
           <View style={[styles.lockBadge, { backgroundColor: isDark ? '#1A2530' : '#E8F4F8' }]}>
             <Ionicons name="lock-closed" size={10} color={isDark ? '#607D8B' : '#90A4AE'} />
             <Text style={[styles.lockBadgeText, { color: isDark ? '#607D8B' : '#90A4AE' }]}>
-              {biome.habitatSlot} creatures to unlock
+              {biome.unlockHint}
             </Text>
           </View>
         )}
       </View>
 
-      <View style={styles.biome} onLayout={(e) => setTankWidth(e.nativeEvent.layout.width)}>
-        {tankWidth > 0 && <Bg width={tankWidth} height={BIOME_HEIGHT} isDark={isDark} uid={uid} />}
+      <View style={[styles.biome, { height: tankH }]} onLayout={(e) => setTankWidth(e.nativeEvent.layout.width)}>
+        {tankWidth > 0 && <Bg width={tankWidth} height={tankH} isDark={isDark} uid={uid} />}
 
         {!locked && (
           <>
@@ -998,12 +1036,12 @@ function BiomeTank({ biome, fish, isDark, locked, uid }: {
 
             {/* Glow orbs (dark biomes) */}
             {tankWidth > 0 && isDarkBiome && [
-              { x: tankWidth * 0.12, y: BIOME_HEIGHT * 0.35, color: '#00E5FF', delay: 0 },
-              { x: tankWidth * 0.35, y: BIOME_HEIGHT * 0.65, color: '#7C4DFF', delay: 600 },
-              { x: tankWidth * 0.58, y: BIOME_HEIGHT * 0.28, color: '#69F0AE', delay: 1100 },
-              { x: tankWidth * 0.78, y: BIOME_HEIGHT * 0.72, color: '#00E5FF', delay: 400 },
-              { x: tankWidth * 0.48, y: BIOME_HEIGHT * 0.50, color: '#7C4DFF', delay: 900 },
-              { x: tankWidth * 0.88, y: BIOME_HEIGHT * 0.42, color: '#69F0AE', delay: 200 },
+              { x: tankWidth * 0.12, y: tankH * 0.35, color: '#00E5FF', delay: 0 },
+              { x: tankWidth * 0.35, y: tankH * 0.65, color: '#7C4DFF', delay: 600 },
+              { x: tankWidth * 0.58, y: tankH * 0.28, color: '#69F0AE', delay: 1100 },
+              { x: tankWidth * 0.78, y: tankH * 0.72, color: '#00E5FF', delay: 400 },
+              { x: tankWidth * 0.48, y: tankH * 0.50, color: '#7C4DFF', delay: 900 },
+              { x: tankWidth * 0.88, y: tankH * 0.42, color: '#69F0AE', delay: 200 },
             ].map((orb, i) => <GlowOrb key={i} {...orb} />)}
 
             {/* Bubbles */}
@@ -1036,7 +1074,7 @@ function BiomeTank({ biome, fish, isDark, locked, uid }: {
             </View>
             <Text style={styles.lockedTitle}>Locked Biome</Text>
             <Text style={styles.lockedSub}>
-              Collect {biome.habitatSlot} {HABITAT_LABELS[biome.habitat].toLowerCase()} creatures to unlock
+              {biome.unlockHint}
             </Text>
           </View>
         )}
@@ -1045,41 +1083,345 @@ function BiomeTank({ biome, fish, isDark, locked, uid }: {
   );
 }
 
+// ─── Hatch animation modal ────────────────────────────
+
+const TAP_HINTS = ['Tap the egg!', 'Keep tapping!', 'One more!'];
+const CRACK_COLORS = ['rgba(255,255,255,0.55)', 'rgba(255,240,180,0.75)', 'rgba(255,200,80,0.90)'];
+
+function HatchingModal({ egg, uid, discoveredIds, onComplete }: {
+  egg: FishEgg;
+  uid: string;
+  discoveredIds: Set<string>;
+  onComplete: (species: FishSpecies, isNew: boolean) => void;
+}) {
+  const [tapCount, setTapCount]   = useState(0);
+  const [phase, setPhase]         = useState<'tapping' | 'bursting' | 'revealed'>('tapping');
+  const [result, setResult]       = useState<{ species: FishSpecies; isNew: boolean } | null>(null);
+  const tapping = useRef(false);
+
+  const bgOp      = useRef(new Animated.Value(0)).current;
+  const shakeX    = useRef(new Animated.Value(0)).current;
+  const eggScale  = useRef(new Animated.Value(1)).current;
+  const crack1Op  = useRef(new Animated.Value(0)).current;
+  const crack2Op  = useRef(new Animated.Value(0)).current;
+  const crack3Op  = useRef(new Animated.Value(0)).current;
+  const flashOp   = useRef(new Animated.Value(0)).current;
+  const fishScale = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(0)).current;
+  const infoOp    = useRef(new Animated.Value(0)).current;
+  const hintOp    = useRef(new Animated.Value(1)).current;
+  const eggBounce = useRef(new Animated.Value(1)).current;
+
+  // Background fade in
+  useEffect(() => {
+    Animated.timing(bgOp, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+  }, []);
+
+  const runBurst = async () => {
+    setPhase('bursting');
+
+    // Final big shake
+    await new Promise<void>((resolve) => {
+      Animated.sequence([
+        Animated.timing(shakeX, { toValue: -18, duration: 40, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue:  18, duration: 40, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue: -14, duration: 35, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue:  14, duration: 35, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue:   0, duration: 30, useNativeDriver: true }),
+      ]).start(() => resolve());
+    });
+
+    // Flash + egg vanish
+    await new Promise<void>((resolve) => {
+      Animated.sequence([
+        Animated.timing(flashOp,  { toValue: 1, duration: 80,  useNativeDriver: true }),
+        Animated.parallel([
+          Animated.timing(flashOp,  { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.timing(eggScale, { toValue: 0, duration: 200, useNativeDriver: true }),
+          Animated.timing(crack1Op, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(crack2Op, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(crack3Op, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ]),
+      ]).start(() => resolve());
+    });
+
+    // Fish spring in
+    setPhase('revealed');
+    Animated.parallel([
+      Animated.spring(fishScale, { toValue: 1, tension: 85, friction: 6, useNativeDriver: true }),
+      Animated.spring(glowScale, { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
+    ]).start();
+
+    await new Promise((r) => setTimeout(r, 400));
+    Animated.timing(infoOp, { toValue: 1, duration: 360, useNativeDriver: true }).start();
+  };
+
+  const handleTap = () => {
+    if (phase !== 'tapping' || tapping.current) return;
+    tapping.current = true;
+
+    const next = tapCount + 1;
+    setTapCount(next);
+
+    // Pick crack opacity ref
+    const crackRef = next === 1 ? crack1Op : next === 2 ? crack2Op : crack3Op;
+
+    // Intensity grows with each tap
+    const shakeAmt = 8 + next * 4;
+    const bounceS  = 1 + next * 0.06;
+
+    // Hint flash out/in
+    Animated.sequence([
+      Animated.timing(hintOp, { toValue: 0, duration: 80, useNativeDriver: true }),
+      Animated.timing(hintOp, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
+
+    Animated.parallel([
+      // Shake
+      Animated.sequence([
+        Animated.timing(shakeX,    { toValue: -shakeAmt, duration: 45, useNativeDriver: true }),
+        Animated.timing(shakeX,    { toValue:  shakeAmt, duration: 45, useNativeDriver: true }),
+        Animated.timing(shakeX,    { toValue: -shakeAmt * 0.6, duration: 35, useNativeDriver: true }),
+        Animated.timing(shakeX,    { toValue:  0,        duration: 35, useNativeDriver: true }),
+      ]),
+      // Bounce scale
+      Animated.sequence([
+        Animated.timing(eggBounce, { toValue: bounceS,  duration: 80,  useNativeDriver: true }),
+        Animated.spring(eggBounce, { toValue: 1, tension: 200, friction: 8, useNativeDriver: true }),
+      ]),
+      // Crack fades in
+      Animated.timing(crackRef,    { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start(() => {
+      tapping.current = false;
+      if (next === 3) {
+        // Fetch the result (fire & forget; we don't need to await it before the burst)
+        hatchEgg(uid, egg.id).then(({ species }) => {
+          const isNew = !discoveredIds.has(species.id);
+          setResult({ species, isNew });
+        });
+        runBurst();
+      }
+    });
+  };
+
+  const rarityColor = result ? RARITY_COLORS[result.species.rarity] : '#29B6F6';
+  const hintText = phase === 'tapping' ? TAP_HINTS[tapCount] ?? '' : '';
+
+  return (
+    <Modal transparent animationType="none" statusBarTranslucent>
+      <Animated.View style={[styles.hatchOverlay, { opacity: bgOp }]}>
+        <View style={styles.hatchCard}>
+
+          {/* Title */}
+          <Text style={[styles.hatchTitle, { color: phase === 'revealed' && result ? rarityColor : '#C8E6FF' }]}>
+            {phase === 'revealed' && result
+              ? (result.isNew ? '✨ New Discovery!' : 'Fish Hatched!')
+              : phase === 'bursting' ? 'Hatching...' : 'Hatch your Egg'}
+          </Text>
+
+          {/* Tap hint dots */}
+          {phase === 'tapping' && (
+            <View style={styles.hatchDotsRow}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={[styles.hatchDot, { backgroundColor: i < tapCount ? '#FFD54F' : '#1A3050' }]} />
+              ))}
+            </View>
+          )}
+
+          {/* Main display area */}
+          <TouchableOpacity
+            activeOpacity={phase === 'tapping' ? 0.9 : 1}
+            onPress={handleTap}
+            disabled={phase !== 'tapping'}
+            style={styles.hatchCenter}
+          >
+            {phase !== 'revealed' ? (
+              // Emoji egg + crack SVG layers stacked in a fixed-size box
+              <Animated.View style={{ width: 100, height: 100, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: shakeX }, { scale: eggBounce }] }}>
+                <Text style={{ fontSize: 80, lineHeight: 100, textAlign: 'center' }}>🥚</Text>
+
+                {/* Tap 1 — hairline at top-center */}
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: crack1Op }]} pointerEvents="none">
+                  <Svg width={100} height={100}>
+                    <Path d="M 50,10 L 46,28 L 53,38 L 47,50" stroke={CRACK_COLORS[0]} strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M 46,28 L 38,20"                  stroke={CRACK_COLORS[0]} strokeWidth={1.3} fill="none" strokeLinecap="round" opacity={0.70} />
+                  </Svg>
+                </Animated.View>
+
+                {/* Tap 2 — branches left and right */}
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: crack2Op }]} pointerEvents="none">
+                  <Svg width={100} height={100}>
+                    <Path d="M 47,50 L 54,62 L 45,72"  stroke={CRACK_COLORS[1]} strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M 53,38 L 65,50 L 74,57"  stroke={CRACK_COLORS[1]} strokeWidth={2.0} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M 47,50 L 33,56 L 24,64"  stroke={CRACK_COLORS[1]} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
+                    <Path d="M 65,50 L 70,41"           stroke={CRACK_COLORS[1]} strokeWidth={1.2} fill="none" strokeLinecap="round" opacity={0.60} />
+                  </Svg>
+                </Animated.View>
+
+                {/* Tap 3 — full spider reaching edges */}
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: crack3Op }]} pointerEvents="none">
+                  <Svg width={100} height={100}>
+                    <Path d="M 45,72 L 49,84 L 43,94"  stroke={CRACK_COLORS[2]} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M 74,57 L 83,67 L 81,79"  stroke={CRACK_COLORS[2]} strokeWidth={2.1} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M 24,64 L 16,74 L 18,85"  stroke={CRACK_COLORS[2]} strokeWidth={1.9} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.90} />
+                    <Path d="M 45,72 L 34,80 L 37,92"  stroke={CRACK_COLORS[2]} strokeWidth={1.7} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
+                    <Path d="M 54,62 L 66,73 L 63,87"  stroke={CRACK_COLORS[2]} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.80} />
+                  </Svg>
+                </Animated.View>
+              </Animated.View>
+            ) : result ? (
+              <>
+                <Animated.View style={[styles.hatchGlow, { backgroundColor: rarityColor + '44', transform: [{ scale: glowScale }] }]} />
+                <Animated.View style={{ transform: [{ scale: fishScale }] }}>
+                  <FishSVG speciesId={result.species.id} size={90} />
+                </Animated.View>
+              </>
+            ) : null}
+          </TouchableOpacity>
+
+          {/* Tap hint text */}
+          {phase === 'tapping' && (
+            <Animated.Text style={[styles.hatchHint, { opacity: hintOp }]}>{hintText}</Animated.Text>
+          )}
+
+          {/* White flash overlay */}
+          <Animated.View style={[StyleSheet.absoluteFill, styles.hatchFlash, { opacity: flashOp }]} pointerEvents="none" />
+
+          {/* Info card after reveal */}
+          {phase === 'revealed' && result && (
+            <Animated.View style={[styles.hatchInfo, { opacity: infoOp }]}>
+              <View style={[styles.hatchRarityBadge, { backgroundColor: rarityColor + '22', borderColor: rarityColor + '77' }]}>
+                <Text style={[styles.hatchRarityText, { color: rarityColor }]}>
+                  {RARITY_LABELS[result.species.rarity]}
+                </Text>
+              </View>
+              <Text style={styles.hatchFishName}>{result.species.name}</Text>
+              {result.isNew && <Text style={styles.hatchNewText}>Added to your Bestiary!</Text>}
+              <TouchableOpacity
+                style={[styles.hatchBtn, { backgroundColor: rarityColor }]}
+                onPress={() => onComplete(result.species, result.isNew)}
+                activeOpacity={0.82}
+              >
+                <Text style={styles.hatchBtnText}>Wonderful!</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+// ─── Live clock (updates every 30 s) ──────────────────
+
+function useNow() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+function fmtCountdown(ms: number): string {
+  if (ms <= 0) return '0m';
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (h >= 24) { const d = Math.floor(h / 24); return `${d}d ${h % 24}h`; }
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 // ─── Egg card ─────────────────────────────────────────
 
-function EggCard({ egg, onHatch, theme }: {
-  egg: FishEgg; onHatch: () => void; theme: ReturnType<typeof getTheme>;
+function EggCard({ egg, onHatch, onSkip, theme }: {
+  egg: FishEgg; onHatch: () => void; onSkip: () => void; theme: ReturnType<typeof getTheme>;
 }) {
+  const now       = useNow();
+  const readyAt   = new Date(egg.readyAt).getTime();
+  const expiresAt = new Date(egg.expiresAt).getTime();
+  const earnedAt  = new Date(egg.earnedAt).getTime();
+
+  const isReady      = now >= readyAt;
+  const msUntilReady = Math.max(0, readyAt - now);
+  const msUntilExp   = Math.max(0, expiresAt - now);
+  const isUrgent     = isReady && msUntilExp < 12 * 3_600_000; // < 12 h left
+
+  const progress = isReady ? 1 : Math.min(1, (now - earnedAt) / (readyAt - earnedAt));
+  const isOtter  = egg.speciesHint === 'otter';
+
   const pulse = useRef(new Animated.Value(1)).current;
   const glow  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isReady) return;
     Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1.07, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-      Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+      Animated.timing(pulse, { toValue: 1.08, duration: 850, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+      Animated.timing(pulse, { toValue: 1,    duration: 850, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
     ])).start();
     Animated.loop(Animated.sequence([
       Animated.timing(glow, { toValue: 1, duration: 1100, useNativeDriver: true }),
       Animated.timing(glow, { toValue: 0, duration: 1100, useNativeDriver: true }),
     ])).start();
-  }, []);
+    return () => { pulse.stopAnimation(); glow.stopAnimation(); };
+  }, [isReady]);
 
-  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.1, 0.38] });
+  const glowOpacity  = glow.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.42] });
+  const glowColor    = isOtter ? '#A0785A' : isUrgent ? '#FF5252' : '#FFD700';
 
   return (
     <TouchableOpacity
-      style={[styles.eggCard, { backgroundColor: theme.surface }]}
-      onPress={onHatch}
-      activeOpacity={0.75}
+      style={[styles.eggCard, { backgroundColor: theme.surface }, isOtter && styles.eggCardOtter]}
+      onPress={isReady ? onHatch : undefined}
+      activeOpacity={isReady ? 0.75 : 1}
     >
-      <Animated.View style={[styles.eggGlow, { opacity: glowOpacity }]} />
-      <Animated.Text style={[styles.eggEmoji, { transform: [{ scale: pulse }] }]}>
-        {'\uD83E\uDD5A'}
+      {/* Glow — only when ready */}
+      {isReady && (
+        <Animated.View style={[styles.eggGlow, { backgroundColor: glowColor, opacity: glowOpacity }]} />
+      )}
+
+      {/* Otter badge */}
+      {isOtter && (
+        <View style={styles.eggOtterBadge}>
+          <Text style={{ fontSize: 12 }}>🦦</Text>
+        </View>
+      )}
+
+      {/* Egg */}
+      <Animated.Text style={[
+        styles.eggEmoji,
+        !isReady && { opacity: 0.45 },
+        isReady && { transform: [{ scale: pulse }] },
+      ]}>
+        🥚
       </Animated.Text>
-      <Text style={[styles.eggLabel, { color: theme.text }]}>Tap to hatch</Text>
-      <Text style={[styles.eggDate, { color: theme.textSecondary }]}>
-        {new Date(egg.earnedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+
+      {/* Status label */}
+      <Text style={[styles.eggLabel, { color: isReady ? theme.text : theme.textSecondary }]}>
+        {isReady ? (isOtter ? '🦦 Tap to hatch!' : 'Tap to hatch!') : (isOtter ? '🦦 Starter egg' : 'Incubating...')}
       </Text>
+
+      {/* Timer */}
+      {isReady ? (
+        <Text style={[styles.eggTimer, { color: isUrgent ? '#FF5252' : '#FF9800' }]}>
+          {isUrgent ? '⚠ ' : '⏳ '}{fmtCountdown(msUntilExp)} left
+        </Text>
+      ) : (
+        <>
+          {/* Progress bar */}
+          <View style={[styles.eggProgressBg, { backgroundColor: theme.background }]}>
+            <View style={[styles.eggProgressFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: isOtter ? '#8D6E63' : '#42A5F5' }]} />
+          </View>
+          <Text style={[styles.eggTimer, { color: theme.textSecondary }]}>
+            Ready in {fmtCountdown(msUntilReady)}
+          </Text>
+          <TouchableOpacity style={styles.eggSkipBtn} onPress={onSkip}>
+            <Ionicons name="play-skip-forward-outline" size={11} color="#7AAFC8" />
+            <Text style={styles.eggSkipText}>Skip</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </TouchableOpacity>
   );
 }
@@ -1199,35 +1541,31 @@ function BestiaryRow({ species, owned, count, theme }: {
 // ─── Main page ────────────────────────────────────────
 
 export default function AquariumPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
-  const [tab, setTab]         = useState<Tab>('tank');
-  const [eggs, setEggs]       = useState<FishEgg[]>([]);
-  const [ownedFish, setOwned] = useState<OwnedFish[]>([]);
-  const [bFilter, setBFilter] = useState<FishRarity | null>(null);
+  const [tab, setTab]           = useState<Tab>('tank');
+  const [eggs, setEggs]         = useState<FishEgg[]>([]);
+  const [ownedFish, setOwned]   = useState<OwnedFish[]>([]);
+  const [bFilter, setBFilter]   = useState<FishRarity | null>(null);
+  const [selectedBiome, setSelectedBiome] = useState<BiomeKey | null>(null);
+  const [hatchingEgg, setHatchingEgg] = useState<FishEgg | null>(null);
+  const [justUnlockedBiomes, setJustUnlockedBiomes] = useState<BiomeCfg[]>([]);
 
   const load = useCallback(async () => {
     const validIds = new Set(FISH_SPECIES.map((s) => s.id));
-    const [e, f] = await Promise.all([getEggs(), getOwnedFish()]);
+    const [e, f] = await Promise.all([getEggs(uid), getOwnedFish(uid)]);
     setEggs(e);
     setOwned(f.filter((fish) => validIds.has(fish.speciesId)));
-  }, []);
+  }, [uid]);
 
-  useEffect(() => { load(); }, [load]);
+  // Claim starter otter egg on first open, then load
+  useEffect(() => { if (uid) claimStarterEgg(uid).then(() => load()); }, [uid, load]);
 
   const discoveredIds = new Set(ownedFish.map((f) => f.speciesId));
   const uniqueOwned   = discoveredIds.size;
 
-  const handleHatch = async (egg: FishEgg) => {
-    const { species } = await hatchEgg(egg.id);
-    await load();
-    const isNew = !discoveredIds.has(species.id);
-    Alert.alert(
-      isNew ? 'New Discovery!' : 'Fish Hatched!',
-      `${species.name}\n${RARITY_LABELS[species.rarity]}${isNew ? '\n\nAdded to your Bestiary!' : ''}`,
-      [{ text: 'Wonderful!' }],
-    );
-  };
 
   const filteredBestiary = bFilter
     ? FISH_SPECIES.filter((s) => s.rarity === bFilter)
@@ -1254,7 +1592,7 @@ export default function AquariumPage() {
           return (
             <TouchableOpacity
               key={t}
-              style={[styles.tabBtn, active && { backgroundColor: '#29B6F622' }]}
+              style={[styles.tabBtn, active && { backgroundColor: '#3DBDAA22' }]}
               onPress={() => setTab(t)}
             >
               <Ionicons name={ICONS[t]} size={15} color={active ? '#29B6F6' : theme.textSecondary} />
@@ -1270,55 +1608,125 @@ export default function AquariumPage() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ══ TANK ══ */}
-        {tab === 'tank' && (
-          <View style={{ gap: 4 }}>
-            {BIOME_CONFIGS.map((biome) => {
-              const habitatSpeciesSet = new Set(FISH_SPECIES.filter((s) => s.habitat === biome.habitat).map((s) => s.id));
-              const habitatFishCount  = ownedFish.filter((f) => habitatSpeciesSet.has(f.speciesId)).length;
-              const biomeSpeciesSet   = new Set(biome.speciesIds);
-              const seenSpecies = new Set<string>();
-              const biomeFish = ownedFish
-                .filter((f) => biomeSpeciesSet.has(f.speciesId))
-                .filter((f) => { if (seenSpecies.has(f.speciesId)) return false; seenSpecies.add(f.speciesId); return true; })
-                .slice(0, MAX_BIOME_FISH);
-              const locked            = habitatFishCount < biome.habitatSlot;
-              return (
+        {tab === 'tank' && (() => {
+          // Pre-compute per-biome data
+          const unlockedBiomes = computeUnlockedBiomes(ownedFish);
+          const biomeData = BIOME_CONFIGS.map((biome) => {
+            const biomeSpeciesSet = new Set(biome.speciesIds);
+            const seenSpecies = new Set<string>();
+            const biomeFish = ownedFish
+              .filter((f) => biomeSpeciesSet.has(f.speciesId))
+              .filter((f) => { if (seenSpecies.has(f.speciesId)) return false; seenSpecies.add(f.speciesId); return true; })
+              .slice(0, MAX_BIOME_FISH);
+            const locked = !unlockedBiomes.has(biome.id);
+            return { biome, biomeFish, locked };
+          });
+
+          // ── Single tank view ──
+          if (selectedBiome) {
+            const entry = biomeData.find((d) => d.biome.id === selectedBiome)!;
+            return (
+              <View style={{ gap: 12 }}>
+                {/* Back header */}
+                <View style={styles.tankHeader}>
+                  <TouchableOpacity style={styles.tankBackBtn} onPress={() => setSelectedBiome(null)}>
+                    <Ionicons name="chevron-back" size={18} color={isDark ? '#AAC8E0' : '#2A5F80'} />
+                    <Text style={[styles.tankBackLabel, { color: isDark ? '#AAC8E0' : '#2A5F80' }]}>Map</Text>
+                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[styles.biomeDot, { backgroundColor: entry.biome.dotColor }]} />
+                    <Text style={[styles.tankHeaderName, { color: isDark ? '#E8F4FF' : '#1A3A55' }]}>
+                      {entry.biome.name}
+                    </Text>
+                  </View>
+                  <Text style={[styles.tankHeaderCount, { color: isDark ? '#607D8B' : '#90A4AE' }]}>
+                    {entry.biomeFish.length}/{entry.biome.speciesIds.length}
+                  </Text>
+                </View>
                 <BiomeTank
-                  key={biome.id}
-                  biome={biome}
-                  fish={biomeFish}
+                  biome={entry.biome}
+                  fish={entry.biomeFish}
                   isDark={isDark}
-                  locked={locked}
-                  uid={biome.id}
+                  locked={entry.locked}
+                  uid={entry.biome.id}
+                  tankH={340}
                 />
-              );
-            })}
+                {entry.locked && (
+                  <View style={[styles.emptyCard, { backgroundColor: theme.surface }]}>
+                    <Text style={[styles.emptyTitle, { color: theme.text }]}>Biome Locked</Text>
+                    <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                      {entry.biome.unlockHint} to unlock this biome.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          }
 
-            <View style={styles.statsRow}>
-              <StatCard label="Fish"    value={ownedFish.length}                        icon="fish-outline"    color="#4FC3F7" theme={theme} />
-              <StatCard label="Species" value={`${uniqueOwned}/${FISH_SPECIES.length}`} icon="library-outline" color="#66BB6A" theme={theme} />
-              <StatCard label="Eggs"    value={eggs.length}                             icon="ellipse-outline" color="#FFB74D" theme={theme} />
-            </View>
-
-            {ownedFish.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: theme.surface }]}>
-                <Text style={[styles.emptyTitle, { color: theme.text }]}>Your tank is empty</Text>
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  Complete focus sessions to earn eggs, then hatch them on the Eggs tab!
+          // ── Ocean map view ──
+          const zones: { label: string; habitat: FishHabitat; emoji: string }[] = [
+            { label: 'SURFACE WATERS', habitat: 'surface', emoji: '🌊' },
+            { label: 'OCEAN FLOOR',    habitat: 'floor',   emoji: '⚓' },
+            { label: 'THE DEPTHS',     habitat: 'depths',  emoji: '🌑' },
+          ];
+          return (
+            <View style={[styles.oceanMap, { backgroundColor: isDark ? '#030D18' : '#062040' }]}>
+              {/* Map title */}
+              <View style={styles.mapTitleRow}>
+                <Text style={styles.mapTitle}>🗺  Ocean Map</Text>
+                <Text style={[styles.mapSubtitle, { color: isDark ? '#4A7A9B' : '#6BA3C2' }]}>
+                  {uniqueOwned}/{FISH_SPECIES.length} species found
                 </Text>
               </View>
-            ) : (
-              <>
-                <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>YOUR COLLECTION</Text>
-                <View style={styles.fishGrid}>
-                  {ownedFish.map((fish) => (
-                    <FishCard key={fish.id} fish={fish} isDark={isDark} theme={theme} />
-                  ))}
-                </View>
-              </>
-            )}
-          </View>
-        )}
+
+              {zones.map(({ label, habitat, emoji }) => {
+                const zoneBiomes = biomeData.filter((d) => d.biome.habitat === habitat);
+                const zoneColor =
+                  habitat === 'surface' ? '#1565C0' :
+                  habitat === 'floor'   ? '#1A3A5C' : '#0A1830';
+                return (
+                  <View key={habitat} style={[styles.mapZone, { backgroundColor: isDark ? zoneColor + '55' : zoneColor + '33' }]}>
+                    <Text style={[styles.mapZoneLabel, { color: isDark ? '#4A8AB0' : '#6BAAD0' }]}>
+                      {emoji}  {label}
+                    </Text>
+                    <View style={styles.mapNodesRow}>
+                      {zoneBiomes.map(({ biome, biomeFish, locked }) => (
+                        <TouchableOpacity
+                          key={biome.id}
+                          style={[
+                            styles.mapNode,
+                            { backgroundColor: isDark ? '#0A1E30' : '#0D2A42',
+                              borderColor: locked ? (isDark ? '#1A2E3E' : '#1A3050') : biome.dotColor + '88',
+                              opacity: locked ? 0.6 : 1 },
+                          ]}
+                          onPress={() => setSelectedBiome(biome.id)}
+                          activeOpacity={0.75}
+                        >
+                          {/* Color accent bar */}
+                          <View style={[styles.mapNodeBar, { backgroundColor: locked ? '#334455' : biome.dotColor }]} />
+                          <Text style={styles.mapNodeName} numberOfLines={1}>{biome.name}</Text>
+                          <Text style={[styles.mapNodeCount, { color: isDark ? '#5A8FAA' : '#7AAFC8' }]}>
+                            {biomeFish.length}/{biome.speciesIds.length} species
+                          </Text>
+                          {locked ? (
+                            <View style={styles.mapNodeLockRow}>
+                              <Ionicons name="lock-closed" size={10} color="#607D8B" />
+                              <Text style={styles.mapNodeLockText}>Locked</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.mapNodeEnterRow}>
+                              <Text style={[styles.mapNodeEnter, { color: biome.dotColor }]}>Dive in →</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })()}
 
         {/* ══ EGGS ══ */}
         {tab === 'eggs' && (
@@ -1335,7 +1743,7 @@ export default function AquariumPage() {
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
                 style={[styles.testEggBtn, { backgroundColor: theme.surface }]}
-                onPress={async () => { await awardEgg(); await load(); }}
+                onPress={async () => { await awardEgg(uid); await load(); }}
               >
                 <Ionicons name="flask-outline" size={15} color={theme.textSecondary} />
                 <Text style={[styles.testEggText, { color: theme.textSecondary }]}>Add Test Egg</Text>
@@ -1347,7 +1755,7 @@ export default function AquariumPage() {
                   'Add one of each fish from the Pixel Gnome Fish Pack to your collection?',
                   [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Load', onPress: async () => { await loadSamplePack(); await load(); } },
+                    { text: 'Load', onPress: async () => { await loadSamplePack(uid); await load(); } },
                   ],
                 )}
               >
@@ -1370,7 +1778,13 @@ export default function AquariumPage() {
                 </Text>
                 <View style={styles.eggGrid}>
                   {eggs.map((egg) => (
-                    <EggCard key={egg.id} egg={egg} onHatch={() => handleHatch(egg)} theme={theme} />
+                    <EggCard
+                      key={egg.id}
+                      egg={egg}
+                      onHatch={() => setHatchingEgg(egg)}
+                      onSkip={() => skipEggTimer(uid, egg.id).then(load)}
+                      theme={theme}
+                    />
                   ))}
                 </View>
               </>
@@ -1382,11 +1796,27 @@ export default function AquariumPage() {
         {tab === 'bestiary' && (
           <View style={{ gap: 12 }}>
             <View style={[styles.bestiaryHeader, { backgroundColor: theme.surface }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                <Text style={[styles.bestiaryBigNum, { color: theme.text }]}>{uniqueOwned}</Text>
-                <Text style={[styles.bestiaryTotal, { color: theme.textSecondary }]}>
-                  / {FISH_SPECIES.length} discovered
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                  <Text style={[styles.bestiaryBigNum, { color: theme.text }]}>{uniqueOwned}</Text>
+                  <Text style={[styles.bestiaryTotal, { color: theme.textSecondary }]}>
+                    / {FISH_SPECIES.length} discovered
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => Alert.alert(
+                    'Clear Bestiary',
+                    'This will remove all your fish. Your eggs will remain. Are you sure?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Clear', style: 'destructive', onPress: () => clearOwnedFish(uid).then(load) },
+                    ],
+                  )}
+                  style={[styles.clearBestiaryBtn, { backgroundColor: '#E76F5122' }]}
+                >
+                  <Ionicons name="trash-outline" size={14} color="#E76F51" />
+                  <Text style={{ fontSize: 12, color: '#E76F51', fontWeight: '600' }}>Clear</Text>
+                </TouchableOpacity>
               </View>
               <View style={[styles.progressBg, { backgroundColor: theme.background }]}>
                 <View style={[styles.progressFill, {
@@ -1446,6 +1876,57 @@ export default function AquariumPage() {
         )}
 
       </ScrollView>
+      {/* Biome unlock celebration modal */}
+      {justUnlockedBiomes.length > 0 && (
+        <Modal transparent animationType="fade" visible>
+          <View style={styles.biomeUnlockOverlay}>
+            <View style={[styles.biomeUnlockCard, { backgroundColor: isDark ? '#152234' : '#FFFFFF' }]}>
+              <Text style={styles.biomeUnlockEmoji}>🔓</Text>
+              <Text style={[styles.biomeUnlockTitle, { color: isDark ? '#E8F4FD' : '#142030' }]}>
+                {justUnlockedBiomes.length === 1 ? 'New Biome Unlocked!' : `${justUnlockedBiomes.length} Biomes Unlocked!`}
+              </Text>
+              {justUnlockedBiomes.map((b) => (
+                <View key={b.id} style={[styles.biomeUnlockRow, { borderColor: b.dotColor + '55' }]}>
+                  <View style={[styles.biomeDot, { backgroundColor: b.dotColor }]} />
+                  <Text style={[styles.biomeUnlockName, { color: isDark ? '#E8F4FD' : '#142030' }]}>{b.name}</Text>
+                </View>
+              ))}
+              <Text style={[styles.biomeUnlockSub, { color: isDark ? '#7AAFC8' : '#5A7E9B' }]}>
+                New fish await in the deep!
+              </Text>
+              <TouchableOpacity
+                style={[styles.biomeUnlockBtn, { backgroundColor: '#3DBDAA' }]}
+                onPress={() => setJustUnlockedBiomes([])}
+              >
+                <Text style={{ color: '#0D1B2A', fontWeight: '700', fontSize: 15 }}>Explore</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {hatchingEgg && (
+        <HatchingModal
+          egg={hatchingEgg}
+          uid={uid}
+          discoveredIds={discoveredIds}
+          onComplete={async () => {
+            const oldUnlocked = computeUnlockedBiomes(ownedFish);
+            setHatchingEgg(null);
+            // Load fresh data directly so we can diff biomes in the same call
+            const validIds = new Set(FISH_SPECIES.map((s) => s.id));
+            const [e, f] = await Promise.all([getEggs(uid), getOwnedFish(uid)]);
+            const newFish = f.filter((fish) => validIds.has(fish.speciesId));
+            setEggs(e);
+            setOwned(newFish);
+            const newUnlocked = computeUnlockedBiomes(newFish);
+            const justUnlocked = BIOME_CONFIGS.filter(
+              (b) => !oldUnlocked.has(b.id) && newUnlocked.has(b.id),
+            );
+            if (justUnlocked.length > 0) setJustUnlockedBiomes(justUnlocked);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1536,12 +2017,18 @@ const styles = StyleSheet.create({
   rarityBadgeText: { fontSize: 11, fontWeight: '600' },
 
   // Eggs
-  eggGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  eggCard: { width: '30%', alignItems: 'center', padding: 18, borderRadius: 22, gap: 6, overflow: 'hidden' },
-  eggGlow: { position: 'absolute', width: 90, height: 90, borderRadius: 45, backgroundColor: '#FFD700', top: 8 },
-  eggEmoji: { fontSize: 40 },
-  eggLabel: { fontSize: 12, fontWeight: '700' },
-  eggDate:  { fontSize: 10 },
+  eggGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  eggCard:        { width: '47%', alignItems: 'center', padding: 18, borderRadius: 22, gap: 6, overflow: 'hidden' },
+  eggCardOtter:   { borderWidth: 1.5, borderColor: '#8D6E6355' },
+  eggGlow:        { position: 'absolute', width: 100, height: 100, borderRadius: 50, top: 6 },
+  eggOtterBadge:  { position: 'absolute', top: 10, right: 10, backgroundColor: '#8D6E6322', borderRadius: 8, padding: 3 },
+  eggEmoji:       { fontSize: 42 },
+  eggLabel:       { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  eggTimer:       { fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  eggProgressBg:  { width: '100%', height: 4, borderRadius: 2, overflow: 'hidden' },
+  eggProgressFill:{ height: 4, borderRadius: 2 },
+  eggSkipBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, marginTop: 4 },
+  eggSkipText:    { fontSize: 11, color: '#7AAFC8', fontWeight: '600' },
 
   testEggBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, alignSelf: 'flex-start' },
   testEggText: { fontSize: 13, fontWeight: '500' },
@@ -1552,6 +2039,7 @@ const styles = StyleSheet.create({
 
   // Bestiary
   bestiaryHeader:  { padding: 20, borderRadius: 22, gap: 12 },
+  clearBestiaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   bestiaryBigNum:  { fontSize: 46, fontWeight: '900', letterSpacing: -1 },
   bestiaryTotal:   { fontSize: 16, fontWeight: '500' },
   progressBg:      { height: 8, borderRadius: 4, overflow: 'hidden' },
@@ -1573,4 +2061,58 @@ const styles = StyleSheet.create({
   emptyTitle:   { fontSize: 18, fontWeight: '700' },
   emptyText:    { fontSize: 13, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
   sectionLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 1 },
+
+  // ── Tank single view header ──
+  tankHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  tankBackBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingRight: 8 },
+  tankBackLabel:   { fontSize: 14, fontWeight: '600' },
+  tankHeaderName:  { fontSize: 16, fontWeight: '700' },
+  tankHeaderCount: { fontSize: 13, fontWeight: '500' },
+
+  // ── Ocean map ──
+  oceanMap:       { borderRadius: 20, overflow: 'hidden', gap: 2, padding: 14 },
+  mapTitleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  mapTitle:       { fontSize: 18, fontWeight: '800', color: '#E8F4FF' },
+  mapSubtitle:    { fontSize: 12, fontWeight: '500' },
+  mapZone:        { borderRadius: 14, padding: 12, marginBottom: 8, gap: 10 },
+  mapZoneLabel:   { fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
+  mapNodesRow:    { flexDirection: 'row', gap: 8 },
+  mapNode:        { flex: 1, borderRadius: 14, borderWidth: 1.5, overflow: 'hidden', paddingBottom: 10 },
+  mapNodeBar:     { height: 4, width: '100%', marginBottom: 8 },
+  mapNodeName:    { fontSize: 12, fontWeight: '700', color: '#D0E8FF', paddingHorizontal: 10 },
+  mapNodeCount:   { fontSize: 10, fontWeight: '500', paddingHorizontal: 10, marginTop: 2 },
+  mapNodeLockRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, marginTop: 6 },
+  mapNodeLockText:{ fontSize: 10, color: '#607D8B' },
+  mapNodeEnterRow:{ paddingHorizontal: 10, marginTop: 6 },
+  mapNodeEnter:   { fontSize: 11, fontWeight: '700' },
+
+  // ── Hatch modal ──
+  hatchOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', padding: 28 },
+  hatchCard:       { width: '100%', maxWidth: 320, backgroundColor: '#0B1C2E', borderRadius: 30, padding: 28, alignItems: 'center', gap: 18, borderWidth: 1.5, borderColor: '#1A3050' },
+  hatchTitle:      { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  hatchCenter:     { width: 140, height: 140, justifyContent: 'center', alignItems: 'center' },
+  hatchEggEmoji:   { fontSize: 88 },
+  hatchFishEmoji:  { fontSize: 80 },
+  hatchGlow:       { position: 'absolute', width: 140, height: 140, borderRadius: 70 },
+  hatchFlash:      { backgroundColor: 'white', borderRadius: 30 },
+  hatchInfo:       { width: '100%', alignItems: 'center', gap: 10 },
+  hatchRarityBadge:{ paddingHorizontal: 16, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
+  hatchRarityText: { fontSize: 12, fontWeight: '700', letterSpacing: 1.1 },
+  hatchFishName:   { fontSize: 26, fontWeight: '800', color: '#E8F4FF', textAlign: 'center' },
+  hatchNewText:    { fontSize: 13, fontWeight: '600', color: '#69F0AE' },
+  hatchBtn:        { marginTop: 4, paddingVertical: 15, paddingHorizontal: 40, borderRadius: 22, width: '100%', alignItems: 'center' },
+  hatchBtnText:    { fontSize: 16, fontWeight: '800', color: 'white' },
+  hatchDotsRow:    { flexDirection: 'row', gap: 10 },
+  hatchDot:        { width: 12, height: 12, borderRadius: 6 },
+  hatchHint:       { fontSize: 14, fontWeight: '600', color: '#7FB3D3', letterSpacing: 0.5 },
+
+  // Biome unlock modal
+  biomeUnlockOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  biomeUnlockCard:    { width: '100%', borderRadius: 28, padding: 28, alignItems: 'center', gap: 12 },
+  biomeUnlockEmoji:   { fontSize: 52, marginBottom: 4 },
+  biomeUnlockTitle:   { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  biomeUnlockRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, borderWidth: 1, width: '100%' },
+  biomeUnlockName:    { fontSize: 16, fontWeight: '700' },
+  biomeUnlockSub:     { fontSize: 14, textAlign: 'center', marginTop: 4 },
+  biomeUnlockBtn:     { marginTop: 8, paddingHorizontal: 40, paddingVertical: 14, borderRadius: 20 },
 });

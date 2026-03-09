@@ -1,5 +1,6 @@
 export type FishRarity = 'trash' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type FishHabitat = 'surface' | 'floor' | 'depths';
+export type BiomeKey = 'shallows' | 'open_water' | 'coral_reef' | 'sandy_bed' | 'shipwreck' | 'deep_reef' | 'abyss';
 
 export interface FishSpecies {
   id: string;
@@ -20,6 +21,9 @@ export const HABITAT_LABELS: Record<FishHabitat, string> = {
 export interface FishEgg {
   id: string;
   earnedAt: string;
+  readyAt: string;     // ISO – when it can be hatched (earnedAt + 24 h)
+  expiresAt: string;   // ISO – disappears if not hatched (readyAt + 48 h)
+  speciesHint?: string; // e.g. 'otter' for the guaranteed starter egg
 }
 
 export interface OwnedFish {
@@ -109,19 +113,73 @@ export const FISH_SPECIES: FishSpecies[] = [
   { id: 'upside_down_jellyfish', name: 'Upside-Down Jellyfish', emoji: '🪼', rarity: 'epic',  habitat: 'depths',  color: '#80CBC4', description: 'Rests on the seafloor, tentacles facing up. Highly unusual.' },
   { id: 'pearl',             name: 'Pearl',                  emoji: '⚪', rarity: 'epic',      habitat: 'depths',  color: '#F5F5F5', description: 'Formed over years inside a mollusk. Perfectly smooth.' },
   // ── Legendary ───────────────────────────────────────────
+  { id: 'otter',             name: 'River Otter',            emoji: '🦦', rarity: 'legendary', habitat: 'surface', color: '#8D6E63', description: 'Your loyal companion from the very beginning. Followed you here.' },
   { id: 'crab_blue',         name: 'Blue Crab',              emoji: '🦀', rarity: 'legendary', habitat: 'floor',   color: '#1E88E5', description: 'Iridescent blue claws. Rare and striking in the wild.' },
   { id: 'crab_king',         name: 'King Crab',              emoji: '🦀', rarity: 'legendary', habitat: 'depths',  color: '#E53935', description: 'The largest crab in the sea. A legend among fishermen.' },
   { id: 'great_white_shark', name: 'Great White Shark',      emoji: '🦈', rarity: 'legendary', habitat: 'depths',  color: '#546E7A', description: 'The apex predator. Ancient, powerful, and feared.' },
 ];
 
-export function rollFishSpecies(): FishSpecies {
-  const total = Object.values(RARITY_WEIGHTS).reduce((a, b) => a + b, 0);
+// Biome → species mapping (used for unlock checks and roll filtering)
+export const BIOME_SPECIES: Record<BiomeKey, readonly string[]> = {
+  shallows:   ['worm', 'apple_core', 'bottle', 'lure', 'goldfish', 'guppy', 'bluegill', 'otter'],
+  open_water: ['silverjaw_minnow', 'tadpole', 'anchovy', 'bass', 'yellow_perch', 'neon_tetra', 'surgeonfish'],
+  coral_reef: ['jellyfish', 'carp', 'rainbow_trout', 'salmon', 'angelfish', 'tuna', 'arowana'],
+  sandy_bed:  ['rusty_can', 'seaweed', 'mussel', 'goby', 'shrimp', 'starfish', 'catfish'],
+  shipwreck:  ['clownfish', 'yellow_tang', 'flounder', 'crab_dungeness', 'coral', 'seashell', 'sand_dollar'],
+  deep_reef:  ['seahorse', 'pufferfish', 'blue_groper', 'napoleon_wrasse', 'purple_tang', 'blue_angelfish', 'crab_blue'],
+  abyss:      ['ribbon_eel', 'anglerfish', 'pearl', 'crab_king', 'great_white_shark', 'moray_eel', 'stingray', 'upside_down_jellyfish'],
+};
+
+/** Compute which biomes are currently unlocked based on owned fish. */
+export function computeUnlockedBiomes(ownedFish: OwnedFish[]): Set<BiomeKey> {
+  const ownedIds = new Set(ownedFish.map((f) => f.speciesId));
+
+  const uniqueSurface = FISH_SPECIES.filter(
+    (f) => f.habitat === 'surface' && f.id !== 'otter' && ownedIds.has(f.id),
+  ).length;
+
+  const uniqueFloor = FISH_SPECIES.filter(
+    (f) => f.habitat === 'floor' && ownedIds.has(f.id),
+  ).length;
+
+  const uniqueTotal = ownedIds.size;
+
+  const unlocked = new Set<BiomeKey>(['shallows']); // always unlocked
+
+  if (uniqueSurface >= 2) unlocked.add('open_water');
+  if (uniqueSurface >= 4) unlocked.add('coral_reef');
+  if (uniqueSurface >= 6) {
+    unlocked.add('sandy_bed');
+    if (uniqueTotal >= 14) unlocked.add('shipwreck');
+    if (uniqueTotal >= 16) unlocked.add('deep_reef');
+  }
+  if (uniqueFloor >= 10) unlocked.add('abyss');
+
+  return unlocked;
+}
+
+// Otter is exclusive to the starter egg — never appears in random rolls
+const ROLLABLE = FISH_SPECIES.filter((f) => f.id !== 'otter');
+
+export function rollFishSpecies(allowedSpeciesIds?: Set<string>): FishSpecies {
+  const pool = allowedSpeciesIds
+    ? ROLLABLE.filter((f) => allowedSpeciesIds.has(f.id))
+    : ROLLABLE;
+
+  const available = (pool.length > 0 ? pool : ROLLABLE);
+
+  const availableRarities = (Object.keys(RARITY_WEIGHTS) as FishRarity[]).filter(
+    (r) => available.some((f) => f.rarity === r),
+  );
+
+  const total = availableRarities.reduce((sum, r) => sum + RARITY_WEIGHTS[r], 0);
   let roll = Math.random() * total;
-  let chosenRarity: FishRarity = 'common';
-  for (const [rarity, weight] of Object.entries(RARITY_WEIGHTS) as [FishRarity, number][]) {
-    roll -= weight;
+  let chosenRarity: FishRarity = availableRarities[0];
+  for (const rarity of availableRarities) {
+    roll -= RARITY_WEIGHTS[rarity];
     if (roll <= 0) { chosenRarity = rarity; break; }
   }
-  const pool = FISH_SPECIES.filter((f) => f.rarity === chosenRarity);
-  return pool[Math.floor(Math.random() * pool.length)];
+
+  const rarityPool = available.filter((f) => f.rarity === chosenRarity);
+  return rarityPool[Math.floor(Math.random() * rarityPool.length)];
 }

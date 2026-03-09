@@ -56,6 +56,7 @@ const FISH_SPRITES: Record<string, ImageSourcePropType> = {
   sand_dollar:            require('../assets/fish/sand_dollar.png'),
   lure:                   require('../assets/fish/lure.png'),
   pearl:                  require('../assets/fish/pearl.png'),
+  otter:                  require('../assets/fish/otter.png'),
 };
 
 export type FishVariant =
@@ -131,6 +132,7 @@ export const SPECIES_VISUALS: Record<string, FishVisual> = {
   sand_dollar:           { variant: 'disc',     body: '#F5F5DC', accent: '#A1887F', detail: '#FAFAFA' },
   lure:                  { variant: 'slim',     body: '#FFD54F', accent: '#FF6F00', detail: '#FFF9C4' },
   pearl:                 { variant: 'disc',     body: '#F5F5F5', accent: '#9E9E9E', detail: '#FFFFFF' },
+  otter:                 { variant: 'oval',     body: '#8D6E63', accent: '#4E342E', detail: '#D7CCC8' },
 };
 
 export function getFishDimensions(variant: FishVariant, size: number) {
@@ -156,12 +158,15 @@ interface FishSVGProps {
 export default function FishSVG({ speciesId, size }: FishSVGProps) {
   const sprite = FISH_SPRITES[speciesId];
   const variant = SPECIES_VISUALS[speciesId]?.variant ?? 'oval';
-  const { width, height } = getFishDimensions(variant, size);
+  const effectiveSize = speciesId === 'otter' ? size * 2 : size;
+  const { width, height } = getFishDimensions(variant, effectiveSize);
+  if (!sprite) return null;
   return (
     <Image
       source={sprite}
       style={{ width, height }}
       resizeMode="contain"
+      fadeDuration={0}
     />
   );
 }

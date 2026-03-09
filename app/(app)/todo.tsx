@@ -4,22 +4,26 @@ import {
   SafeAreaView, Modal, TextInput, Alert, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { Task, TaskList, TaskPriority, generateId, priorityColor } from '../../models/taskModels';
 import * as taskService from '../../services/taskService';
 
-const LIST_COLORS = ['#4A90E2', '#FF6B35', '#9370DB', '#4CAF50', '#FFD700', '#F44336', '#8B4513'];
+const LIST_COLORS = ['#2E86AB', '#3DBDAA', '#9381FF', '#52B788', '#F4A261', '#E76F51', '#7AAFC8'];
 const PRIORITIES: TaskPriority[] = ['none', 'low', 'medium', 'high'];
 
 type View_ = 'lists' | 'tasks';
 
 export default function TodoPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
   const [view, setView] = useState<View_>('lists');
   const [lists, setLists] = useState<TaskList[]>([]);
+  const [taskCountMap, setTaskCountMap] = useState<Record<string, number>>({});
   const [activeList, setActiveList] = useState<TaskList | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]); // tasks for active list
 
@@ -38,14 +42,22 @@ export default function TodoPage() {
   const [taskDue, setTaskDue] = useState('');
 
   const loadLists = useCallback(async () => {
-    const l = await taskService.getAllLists();
+    const [l, allTasks] = await Promise.all([
+      taskService.getAllLists(uid),
+      taskService.getAllTasks(uid),
+    ]);
     setLists(l);
-  }, []);
+    const counts: Record<string, number> = {};
+    for (const list of l) {
+      counts[list.id] = allTasks.filter((t) => t.listId === list.id && !t.completed).length;
+    }
+    setTaskCountMap(counts);
+  }, [uid]);
 
   const loadTasks = useCallback(async (listId: string) => {
-    const all = await taskService.getAllTasks();
+    const all = await taskService.getAllTasks(uid);
     setTasks(all.filter((t) => t.listId === listId));
-  }, []);
+  }, [uid]);
 
   useEffect(() => { loadLists(); }, [loadLists]);
 
@@ -67,7 +79,7 @@ export default function TodoPage() {
       color: listColor,
       icon: 'folder',
     };
-    await taskService.addList(list);
+    await taskService.addList(uid, list);
     setListModal(false);
     setListTitle(''); setListDesc('');
     loadLists();
@@ -78,7 +90,7 @@ export default function TodoPage() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          await taskService.deleteList(id);
+          await taskService.deleteList(uid, id);
           loadLists();
         },
       },
@@ -105,7 +117,7 @@ export default function TodoPage() {
     if (!activeList) return;
     if (editTask) {
       const updated: Task = { ...editTask, title: taskTitle.trim(), description: taskDesc.trim() || undefined, priority: taskPriority, dueDate: taskDue || undefined };
-      await taskService.updateTask(updated);
+      await taskService.updateTask(uid, updated);
     } else {
       const task: Task = {
         id: generateId(),
@@ -124,14 +136,14 @@ export default function TodoPage() {
         subtasks: [],
         notes: [],
       };
-      await taskService.addTask(task);
+      await taskService.addTask(uid, task);
     }
     setTaskModal(false);
     loadTasks(activeList.id);
   };
 
   const toggleTask = async (task: Task) => {
-    await taskService.updateTask({ ...task, completed: !task.completed });
+    await taskService.updateTask(uid, { ...task, completed: !task.completed });
     if (activeList) loadTasks(activeList.id);
   };
 
@@ -140,7 +152,7 @@ export default function TodoPage() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          await taskService.deleteTask(id);
+          await taskService.deleteTask(uid, id);
           if (activeList) loadTasks(activeList.id);
         },
       },
@@ -166,7 +178,7 @@ export default function TodoPage() {
             </View>
           ) : (
             lists.map((list) => {
-              const taskCount = list.tasks.length;
+              const taskCount = taskCountMap[list.id] ?? 0;
               return (
                 <TouchableOpacity
                   key={list.id}
@@ -384,7 +396,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8,
   },
   topTitle: { flex: 1, fontSize: 18, fontWeight: '700' },
-  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFD700', justifyContent: 'center', alignItems: 'center' },
+  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#3DBDAA', justifyContent: 'center', alignItems: 'center' },
   listColorBar: { width: 4, height: 20, borderRadius: 2 },
   scroll: { padding: 16, gap: 10, paddingBottom: 32 },
   emptyState: { alignItems: 'center', paddingVertical: 48, gap: 12 },
@@ -407,7 +419,7 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 11, fontWeight: '600' },
   priorityRow: { flexDirection: 'row', gap: 8 },
   priorityBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1.5, alignItems: 'center' },
-  priorityText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  priorityText: { fontSize: 12, fontWeight: '600', color: '#7AAFC8' },
   colorRow: { flexDirection: 'row', gap: 10 },
   colorDot: { width: 28, height: 28, borderRadius: 14 },
   colorDotActive: { borderWidth: 3, borderColor: '#FFF' },
@@ -423,6 +435,6 @@ const styles = StyleSheet.create({
   modalBtns: { flexDirection: 'row', gap: 12 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#33333366', alignItems: 'center' },
   cancelBtnText: { color: '#AAA', fontWeight: '600' },
-  confirmBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#FFD700', alignItems: 'center' },
-  confirmBtnText: { color: '#1E1E1E', fontWeight: '700' },
+  confirmBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#3DBDAA', alignItems: 'center' },
+  confirmBtnText: { color: '#0D1B2A', fontWeight: '700' },
 });
