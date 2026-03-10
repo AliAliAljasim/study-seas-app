@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, TextInput, Alert, Keyboard,
+  SafeAreaView, TextInput, Alert, Keyboard, useWindowDimensions,
 } from 'react-native';
+import Svg, { Polyline, Circle as SvgCircle, Text as SvgText, Line as SvgLine, G } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
@@ -98,6 +99,52 @@ function courseGrade(course: Course): number | null {
   if (totalWeight === 0) return null;
   const weighted = course.assignments.reduce((s, a) => s + (a.score / a.maxScore) * 100 * a.weight, 0);
   return weighted / totalWeight;
+}
+
+// ── GPA Trend Chart ────────────────────────────────────
+
+function GPATrendChart({ data, isDark }: {
+  data: { name: string; gpa: number }[];
+  isDark: boolean;
+}) {
+  const { width } = useWindowDimensions();
+  const chartWidth = width - 68; // 16px screen padding * 2 + 18px card padding * 2
+  const chartHeight = 130;
+  const padL = 28, padR = 10, padT = 12, padB = 28;
+  const plotW = chartWidth - padL - padR;
+  const plotH = chartHeight - padT - padB;
+
+  const getX = (i: number) => padL + (data.length > 1 ? (i / (data.length - 1)) * plotW : plotW / 2);
+  const getY = (gpa: number) => padT + plotH - (gpa / 4) * plotH;
+  const points = data.map((d, i) => `${getX(i)},${getY(d.gpa)}`).join(' ');
+
+  return (
+    <Svg width={chartWidth} height={chartHeight}>
+      {[0, 1, 2, 3, 4].map((g) => {
+        const y = getY(g);
+        return (
+          <G key={g}>
+            <SvgLine x1={padL} y1={y} x2={chartWidth - padR} y2={y}
+              stroke={isDark ? '#1E3A54' : '#EAF0F6'} strokeWidth={1} />
+            <SvgText x={padL - 4} y={y + 4} fontSize={9} textAnchor="end"
+              fill={isDark ? '#4D7A96' : '#9BBFD4'}>{g}</SvgText>
+          </G>
+        );
+      })}
+      <Polyline points={points} fill="none" stroke="#5B8DEF" strokeWidth={2.5}
+        strokeLinejoin="round" strokeLinecap="round" />
+      {data.map((d, i) => (
+        <G key={i}>
+          <SvgCircle cx={getX(i)} cy={getY(d.gpa)} r={5}
+            fill={gpaColor(d.gpa)} stroke={isDark ? '#152234' : '#fff'} strokeWidth={2} />
+          <SvgText x={getX(i)} y={chartHeight - 6} fontSize={8} textAnchor="middle"
+            fill={isDark ? '#4D7A96' : '#9BBFD4'}>
+            {d.name.length > 9 ? d.name.slice(0, 8) + '…' : d.name}
+          </SvgText>
+        </G>
+      ))}
+    </Svg>
+  );
 }
 
 // ── Main Component ─────────────────────────────────────
@@ -231,6 +278,11 @@ export default function GradesPage() {
     const totalPoints = all.reduce((s, x) => s + x.gpa * x.credits, 0);
     return totalCredits > 0 ? totalPoints / totalCredits : 0;
   })();
+
+  const allSemesters = [
+    ...pastSemesters,
+    ...(semesterGPA !== null ? [{ id: 'current', name: 'Current', gpa: semesterGPA, credits: semesterCredits }] : []),
+  ];
 
   const neededGrade = (() => {
     const cur = parseFloat(currentGrade);
@@ -493,6 +545,14 @@ export default function GradesPage() {
                 <Text style={[styles.heroGPA, { color: theme.textSecondary }]}>—</Text>
               )}
             </View>
+
+            {/* GPA Trend Chart */}
+            {allSemesters.length >= 2 && (
+              <View style={[styles.card, { backgroundColor: theme.surface }]}>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>GPA Trend</Text>
+                <GPATrendChart data={allSemesters} isDark={isDark} />
+              </View>
+            )}
 
             {/* Current semester */}
             <View style={[styles.card, { backgroundColor: theme.surface }]}>

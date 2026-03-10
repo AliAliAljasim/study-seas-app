@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  SafeAreaView, Alert, Platform,
+  SafeAreaView, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
@@ -9,6 +9,9 @@ import { getTheme } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { awardEgg } from '../../services/aquariumService';
 import { useTutorial } from '../../context/TutorialContext';
+import * as taskService from '../../services/taskService';
+import { Task, priorityColor } from '../../models/taskModels';
+import { logSession, logTaskCompletion } from '../../services/studyStatsService';
 
 type Technique = 'Flowtime' | 'Pomodoro' | '52/17 Rule';
 
@@ -40,6 +43,9 @@ export default function TimerPage() {
   const [completedSessions, setCompletedSessions] = useState(0);
   const [totalFocusSeconds, setTotalFocusSeconds] = useState(0);
   const [history, setHistory] = useState<{ label: string; duration: number; at: string }[]>([]);
+  const [selectedTask,   setSelectedTask]   = useState<Task | null>(null);
+  const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [pendingTasks,   setPendingTasks]   = useState<Task[]>([]);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const focusStartRef = useRef<number>(0);
@@ -69,6 +75,14 @@ export default function TimerPage() {
   useEffect(() => {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
+
+  useEffect(() => {
+    if (user?.uid) {
+      taskService.getAllTasks(user.uid).then((all) =>
+        setPendingTasks(all.filter((t) => !t.completed))
+      );
+    }
+  }, [user?.uid]);
 
   // Trigger phase completion outside the state updater to avoid React invariant violation
   useEffect(() => {
@@ -122,17 +136,15 @@ export default function TimerPage() {
   const handlePhaseComplete = () => {
     const cfg = TECHNIQUES[technique];
     if (phase === 'focus') {
-      // Tutorial: advance after first focus session
-      if (tutorialStepRef.current === 'timer_prompt') {
-        advance();
-      }
+      if (tutorialStepRef.current === 'timer_prompt') advance();
       const elapsed = Math.round((Date.now() - focusStartRef.current) / 1000);
       setTotalFocusSeconds((t) => t + elapsed);
       setCompletedSessions((c) => c + 1);
       const newCount = sessionCount + 1;
       setSessionCount(newCount);
+      const taskAtComplete = selectedTask; // capture before state updates
       setHistory((h) => [{
-        label: `${technique} Focus`,
+        label: taskAtComplete ? taskAtComplete.title : `${technique} Focus`,
         duration: elapsed,
         at: new Date().toLocaleTimeString(),
       }, ...h.slice(0, 9)]);
@@ -140,11 +152,31 @@ export default function TimerPage() {
       const isLongBreak = newCount % cfg.longBreakAfter === 0;
       setPhase(isLongBreak ? 'longBreak' : 'shortBreak');
       setSeconds(isLongBreak ? cfg.longBreak : cfg.shortBreak);
-      if (user?.uid) awardEgg(user.uid);
+
+      if (user?.uid) {
+        awardEgg(user.uid);
+        logSession(user.uid, elapsed, taskAtComplete?.id);
+      }
+
+      const markDoneBtn = taskAtComplete && user?.uid ? [{
+        text: '✓ Mark Task Done',
+        onPress: () => {
+          taskService.updateTask(user.uid!, {
+            ...taskAtComplete, completed: true, progressState: 'done',
+            lastCompleted: new Date().toISOString(),
+          });
+          logTaskCompletion(user.uid!, taskAtComplete.id);
+          setSelectedTask(null);
+          taskService.getAllTasks(user.uid!).then((all) =>
+            setPendingTasks(all.filter((t) => !t.completed))
+          );
+        },
+      }] : [];
+
       Alert.alert(
-        'Focus Session Complete!',
+        'Focus Session Complete! 🎉',
         `Great work! Time for a ${isLongBreak ? 'long' : 'short'} break.\n\n🥚 A fish egg has been added to your Aquarium!`,
-        [{ text: 'OK' }],
+        [...markDoneBtn, { text: markDoneBtn.length ? 'Later' : 'OK' }],
       );
     } else {
       setPhase('focus');
@@ -182,6 +214,38 @@ export default function TimerPage() {
 
         {/* Info */}
         <Text style={[styles.infoText, { color: theme.textSecondary }]}>{TECHNIQUE_INFO[technique]}</Text>
+
+        {/* Task Focus Card */}
+        <View style={[styles.taskCard, { backgroundColor: theme.card }]}>
+          <TouchableOpacity
+            style={styles.taskCardInner}
+            onPress={() => setShowTaskPicker(true)}
+            activeOpacity={0.7}
+          >
+            {selectedTask ? (
+              <>
+                <View style={[styles.taskDot, { backgroundColor: priorityColor(selectedTask.priority) }]} />
+                <Text style={[styles.taskCardText, { color: theme.text }]} numberOfLines={1}>
+                  {selectedTask.title}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="list-outline" size={16} color={theme.textSecondary} />
+                <Text style={[styles.taskCardPlaceholder, { color: theme.textSecondary }]}>
+                  Focus on a task (optional)
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          {selectedTask ? (
+            <TouchableOpacity onPress={() => setSelectedTask(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color={theme.textSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="chevron-forward" size={14} color={theme.textSecondary} />
+          )}
+        </View>
 
         {/* Phase Label */}
         <View style={[styles.phaseLabel, { backgroundColor: phaseColor + '22' }]}>
@@ -221,15 +285,6 @@ export default function TimerPage() {
           </View>
         </View>
 
-        {/* Dev: 3-second test timer */}
-        <TouchableOpacity
-          style={[styles.testTimerBtn, { borderColor: theme.textSecondary + '44' }]}
-          onPress={() => { stopTimer(); setPhase('focus'); setSeconds(3); }}
-        >
-          <Ionicons name="timer-outline" size={14} color={theme.textSecondary} />
-          <Text style={[styles.testTimerText, { color: theme.textSecondary }]}>3s Test Timer</Text>
-        </TouchableOpacity>
-
         {/* Stats */}
         <View style={[styles.statsCard, { backgroundColor: theme.card }]}>
           <StatItem label="Completed" value={completedSessions} color="#52B788" />
@@ -253,6 +308,56 @@ export default function TimerPage() {
           </>
         )}
       </ScrollView>
+
+      {/* Task Picker Modal */}
+      <Modal visible={showTaskPicker} transparent animationType="slide">
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerSheet, { backgroundColor: theme.surface }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: theme.text }]}>Select Task</Text>
+              <TouchableOpacity onPress={() => setShowTaskPicker(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+            {pendingTasks.length === 0 ? (
+              <View style={styles.pickerEmpty}>
+                <Text style={{ fontSize: 32 }}>✅</Text>
+                <Text style={[styles.pickerEmptyText, { color: theme.textSecondary }]}>
+                  No pending tasks
+                </Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {pendingTasks
+                  .slice()
+                  .sort((a, b) => {
+                    const O: Record<string, number> = { high: 3, medium: 2, low: 1, none: 0 };
+                    return (O[b.priority] ?? 0) - (O[a.priority] ?? 0);
+                  })
+                  .map((task, i, arr) => (
+                    <TouchableOpacity
+                      key={task.id}
+                      style={[
+                        styles.pickerRow,
+                        { borderBottomColor: theme.border },
+                        i < arr.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth },
+                      ]}
+                      onPress={() => { setSelectedTask(task); setShowTaskPicker(false); }}
+                    >
+                      <View style={[styles.taskDot, { backgroundColor: priorityColor(task.priority) }]} />
+                      <Text style={[styles.pickerRowText, { color: theme.text }]} numberOfLines={1}>
+                        {task.title}
+                      </Text>
+                      {selectedTask?.id === task.id && (
+                        <Ionicons name="checkmark" size={18} color="#3DBDAA" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -298,6 +403,19 @@ const styles = StyleSheet.create({
   historyDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3DBDAA' },
   historyLabel: { flex: 1, fontSize: 14 },
   historyMeta: { fontSize: 12 },
-  testTimerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
-  testTimerText: { fontSize: 12, fontWeight: '600' },
+  // Task focus card
+  taskCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  taskCardInner: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  taskDot: { width: 8, height: 8, borderRadius: 4 },
+  taskCardText: { flex: 1, fontSize: 14, fontWeight: '600' },
+  taskCardPlaceholder: { flex: 1, fontSize: 14 },
+  // Task picker modal
+  pickerOverlay: { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
+  pickerSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' },
+  pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  pickerTitle: { fontSize: 18, fontWeight: '700' },
+  pickerEmpty: { alignItems: 'center', paddingVertical: 40, gap: 10 },
+  pickerEmptyText: { fontSize: 14 },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  pickerRowText: { flex: 1, fontSize: 15, fontWeight: '500' },
 });

@@ -75,21 +75,32 @@ export async function claimStarterEgg(uid: string): Promise<FishEgg | null> {
   return egg;
 }
 
-/** Awards one egg per calendar day on login. Returns null if already awarded today.
- *  The egg incubates until the next midnight so it's always ready when the daily reward resets. */
+/** Today's date string in Eastern Time — changes at 12:00 AM ET. */
+function getEasternDateString(): string {
+  return new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+}
+
+/** Milliseconds from now until the next 12:00 AM Eastern Time (handles EST/EDT automatically). */
+function getMsUntilEasternMidnight(): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parseInt(parts.find(p => p.type === t)!.value);
+  const elapsedMs = get('hour') * 3_600_000 + get('minute') * 60_000 + get('second') * 1_000;
+  return 86_400_000 - elapsedMs;
+}
+
+/** Awards one egg per calendar day (ET) on login. Returns null if already awarded today.
+ *  The egg incubates until the next 12:00 AM ET so it's always ready when the daily reward resets. */
 export async function checkDailyLoginEgg(uid: string): Promise<FishEgg | null> {
-  const today = new Date().toDateString();
+  const today = getEasternDateString();
   const last  = await AsyncStorage.getItem(lastLoginKey(uid));
   if (last === today) return null;
   await AsyncStorage.setItem(lastLoginKey(uid), today);
 
-  // Count down to the next midnight (12:00:00 AM)
-  const now      = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0); // rolls to 00:00:00 the following day
-  const msUntilMidnight = midnight.getTime() - now.getTime();
-
-  const egg  = buildEgg(undefined, msUntilMidnight);
+  const egg  = buildEgg(undefined, getMsUntilEasternMidnight());
   const eggs = await loadAndCleanEggs(uid);
   await AsyncStorage.setItem(eggsKey(uid), JSON.stringify([...eggs, egg]));
   return egg;

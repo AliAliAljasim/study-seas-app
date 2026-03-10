@@ -3,7 +3,6 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, Animated, Easing, Alert, Modal, useWindowDimensions,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Rect, Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +13,8 @@ import { getTheme } from '../../constants/colors';
 import { checkDailyLoginEgg, getEggs, getOwnedFish } from '../../services/aquariumService';
 import { getAllTasks } from '../../services/taskService';
 import { computeUnlockedBiomes } from '../../models/aquariumModels';
+import { Task, priorityColor } from '../../models/taskModels';
+import { getWeeklyStats, WeeklyStats } from '../../services/studyStatsService';
 
 // ─── Data ─────────────────────────────────────────────
 
@@ -153,6 +154,18 @@ function FeatureRow({ feature, isDark, onPress, last }: {
   );
 }
 
+// ─── Weekly stat tile ─────────────────────────────────
+
+function WeeklyStat({ icon, value, label, color }: { icon: string; value: string; label: string; color: string }) {
+  return (
+    <View style={s.wItem}>
+      <Text style={s.wIcon}>{icon}</Text>
+      <Text style={[s.wValue, { color }]}>{value}</Text>
+      <Text style={s.wLabel}>{label}</Text>
+    </View>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────
 
 export default function HomePage() {
@@ -165,7 +178,7 @@ export default function HomePage() {
   const uid       = user?.uid ?? '';
   const quote     = getTodayQuote();
 
-  const { step, setSpotlight, initForUser, advance } = useTutorial();
+  const { step, setSpotlight, advance } = useTutorial();
   const heroRef     = useRef<View>(null);
   const featuresRef = useRef<View>(null);
 
@@ -192,6 +205,8 @@ export default function HomePage() {
   const [pendingTasks,     setPendingTasks]      = useState(0);
   const [biomesCount,      setBiomesCount]       = useState(1);
   const [showDailyEggModal, setShowDailyEggModal] = useState(false);
+  const [priorityTasks,    setPriorityTasks]     = useState<Task[]>([]);
+  const [weeklyStats,      setWeeklyStats]       = useState<WeeklyStats | null>(null);
 
   const load = useCallback(async () => {
     if (!uid) return;
@@ -200,8 +215,17 @@ export default function HomePage() {
     ]);
     setFishCount(new Set(ownedFish.map((f) => f.speciesId)).size);
     setEggCount(eggs.length);
-    setPendingTasks(tasks.filter((t) => !t.completed).length);
+    const pending = tasks.filter((t) => !t.completed);
+    setPendingTasks(pending.length);
     setBiomesCount(computeUnlockedBiomes(ownedFish).size);
+    const ORDER: Record<string, number> = { high: 3, medium: 2, low: 1, none: 0 };
+    setPriorityTasks(
+      pending
+        .filter((t) => t.priority !== 'none')
+        .sort((a, b) => (ORDER[b.priority] ?? 0) - (ORDER[a.priority] ?? 0))
+        .slice(0, 3),
+    );
+    getWeeklyStats(uid).then(setWeeklyStats);
   }, [uid]);
 
   useEffect(() => {
@@ -216,25 +240,6 @@ export default function HomePage() {
     Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: signOut },
-    ]);
-
-  const handleRemakeAccount = () =>
-    Alert.alert('Remake Account', 'This will erase all your fish, eggs, tasks, grades, and calendar data and restart the tutorial. Continue?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset Everything',
-        style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove([
-            `aquarium_eggs_${uid}`, `aquarium_fish_${uid}`,
-            `aquarium_starter_claimed_${uid}`, `last_login_date_${uid}`,
-            `tasks_${uid}`, `task_lists_${uid}`, `tutorial_${uid}`,
-            'calendar_events', 'grades_courses', 'grades_past_semesters',
-          ]);
-          await initForUser(uid);
-          load();
-        },
-      },
     ]);
 
   const spotH = 160;
@@ -306,6 +311,21 @@ export default function HomePage() {
           <StatPill icon="✅" value={pendingTasks}  label="tasks" />
         </View>
 
+        {/* ── Weekly summary ── */}
+        {weeklyStats && (
+          <View style={[s.weeklyCard, { backgroundColor: isDark ? '#0F1E30' : '#FFFFFF', borderColor: isDark ? '#1E3A54' : '#E0EEF8' }]}>
+            <Text style={[s.sectionLabel, { color: isDark ? '#2A4A64' : '#9BBFD4' }]}>THIS WEEK</Text>
+            <View style={s.weeklyGrid}>
+              <WeeklyStat icon="⏱" value={`${weeklyStats.hours}h`}  label="studied"    color="#2E86AB" />
+              <WeeklyStat icon="✅" value={String(weeklyStats.tasksCompleted)} label="tasks done" color="#52B788" />
+              <WeeklyStat icon="🔥" value={`${weeklyStats.streak}d`} label="streak"     color="#F4845F" />
+              {weeklyStats.cgpa !== null
+                ? <WeeklyStat icon="📊" value={weeklyStats.cgpa.toFixed(2)} label="GPA" color="#9381FF" />
+                : <WeeklyStat icon="📚" value="—"   label="GPA"        color="#9381FF" />}
+            </View>
+          </View>
+        )}
+
         {/* ── Feature list ── */}
         <View ref={featuresRef} collapsable={false} style={[s.featureCard, { backgroundColor: isDark ? '#0F1E30' : '#FFFFFF', borderColor: isDark ? '#1E3A54' : '#E0EEF8' }]}>
           <Text style={[s.sectionLabel, { color: isDark ? '#2A4A64' : '#9BBFD4' }]}>YOUR SPACE</Text>
@@ -320,11 +340,28 @@ export default function HomePage() {
           ))}
         </View>
 
-        {/* Dev — Remake Account */}
-        <TouchableOpacity style={s.remakeBtn} onPress={handleRemakeAccount}>
-          <Ionicons name="refresh-circle-outline" size={14} color="#E76F51" />
-          <Text style={s.remakeBtnText}>Remake Account</Text>
-        </TouchableOpacity>
+        {/* ── Priority Tasks ── */}
+        {priorityTasks.length > 0 && (
+          <View style={[s.priorityCard, { backgroundColor: isDark ? '#0F1E30' : '#FFFFFF', borderColor: isDark ? '#1E3A54' : '#E0EEF8' }]}>
+            <Text style={[s.sectionLabel, { color: isDark ? '#2A4A64' : '#9BBFD4' }]}>PRIORITY TASKS</Text>
+            {priorityTasks.map((task, i) => {
+              const pc = priorityColor(task.priority);
+              return (
+                <TouchableOpacity
+                  key={task.id}
+                  style={[s.priorityRow, i < priorityTasks.length - 1 && { borderBottomWidth: 1, borderBottomColor: isDark ? '#1E3A5470' : '#E8F4FD' }]}
+                  onPress={() => router.push('/todo' as any)}
+                >
+                  <View style={[s.priorityDot, { backgroundColor: pc }]} />
+                  <Text style={[s.priorityTitle, { color: isDark ? '#E8F4FD' : '#0D1B2A' }]} numberOfLines={1}>{task.title}</Text>
+                  <View style={[s.priorityBadge, { backgroundColor: pc + '22' }]}>
+                    <Text style={[s.priorityBadgeText, { color: pc }]}>{task.priority}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
       </ScrollView>
 
@@ -454,11 +491,26 @@ const s = StyleSheet.create({
   },
   modalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  // Remake
-  remakeBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1, borderColor: '#E76F5133',
+  // Weekly summary card
+  weeklyCard: {
+    borderRadius: 18, borderWidth: 1, paddingHorizontal: 12, paddingBottom: 14,
   },
-  remakeBtnText: { fontSize: 12, color: '#E76F51', fontWeight: '600' },
+  weeklyGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  wItem:  { alignItems: 'center', flex: 1, paddingTop: 4, gap: 2 },
+  wIcon:  { fontSize: 18 },
+  wValue: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  wLabel: { fontSize: 9, color: '#4D7A96', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+
+  // Priority tasks card
+  priorityCard: {
+    borderRadius: 18, borderWidth: 1, overflow: 'hidden', paddingHorizontal: 4,
+  },
+  priorityRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 11,
+  },
+  priorityDot: { width: 8, height: 8, borderRadius: 4 },
+  priorityTitle: { flex: 1, fontSize: 13, fontWeight: '600' },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  priorityBadgeText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
 });

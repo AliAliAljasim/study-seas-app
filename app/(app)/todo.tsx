@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, Modal, TextInput, Alert, FlatList,
+  SafeAreaView, Modal, TextInput, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { Task, TaskList, TaskPriority, generateId, priorityColor } from '../../models/taskModels';
 import * as taskService from '../../services/taskService';
+import { logTaskCompletion } from '../../services/studyStatsService';
 
 const LIST_COLORS = ['#2E86AB', '#3DBDAA', '#9381FF', '#52B788', '#F4A261', '#E76F51', '#7AAFC8'];
 const PRIORITIES: TaskPriority[] = ['none', 'low', 'medium', 'high'];
@@ -40,6 +41,11 @@ export default function TodoPage() {
   const [taskDesc, setTaskDesc] = useState('');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('none');
   const [taskDue, setTaskDue] = useState('');
+  const [taskRepeat, setTaskRepeat] = useState<'none' | 'daily' | 'weekly'>('none');
+
+  // Snackbar
+  const [snackbar, setSnackbar] = useState<{ message: string; undoFn: () => void } | null>(null);
+  const snackbarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadLists = useCallback(async () => {
     const [l, allTasks] = await Promise.all([
@@ -97,9 +103,15 @@ export default function TodoPage() {
     ]);
   };
 
+  const showSnackbar = (message: string, undoFn: () => void) => {
+    if (snackbarTimer.current) clearTimeout(snackbarTimer.current);
+    setSnackbar({ message, undoFn });
+    snackbarTimer.current = setTimeout(() => setSnackbar(null), 3500);
+  };
+
   const openAddTask = () => {
     setEditTask(null);
-    setTaskTitle(''); setTaskDesc(''); setTaskPriority('none'); setTaskDue('');
+    setTaskTitle(''); setTaskDesc(''); setTaskPriority('none'); setTaskDue(''); setTaskRepeat('none');
     setTaskModal(true);
   };
 
@@ -109,6 +121,7 @@ export default function TodoPage() {
     setTaskDesc(task.description ?? '');
     setTaskPriority(task.priority);
     setTaskDue(task.dueDate ?? '');
+    setTaskRepeat((task.repeatInterval as 'none' | 'daily' | 'weekly') ?? 'none');
     setTaskModal(true);
   };
 
@@ -116,7 +129,7 @@ export default function TodoPage() {
     if (!taskTitle.trim()) { Alert.alert('Error', 'Please enter a task title.'); return; }
     if (!activeList) return;
     if (editTask) {
-      const updated: Task = { ...editTask, title: taskTitle.trim(), description: taskDesc.trim() || undefined, priority: taskPriority, dueDate: taskDue || undefined };
+      const updated: Task = { ...editTask, title: taskTitle.trim(), description: taskDesc.trim() || undefined, priority: taskPriority, dueDate: taskDue || undefined, repeatInterval: taskRepeat };
       await taskService.updateTask(uid, updated);
     } else {
       const task: Task = {
@@ -131,7 +144,7 @@ export default function TodoPage() {
         dueDate: taskDue || undefined,
         estimatedHours: 0,
         estimatedMinutes: 0,
-        repeatInterval: 'none',
+        repeatInterval: taskRepeat,
         listId: activeList.id,
         subtasks: [],
         notes: [],
@@ -143,20 +156,25 @@ export default function TodoPage() {
   };
 
   const toggleTask = async (task: Task) => {
-    await taskService.updateTask(uid, { ...task, completed: !task.completed });
+    const markingComplete = !task.completed;
+    await taskService.updateTask(uid, {
+      ...task, completed: markingComplete,
+      progressState: markingComplete ? 'done' : 'notStarted',
+      lastCompleted: markingComplete ? new Date().toISOString() : task.lastCompleted,
+    });
+    if (markingComplete) logTaskCompletion(uid, task.id);
     if (activeList) loadTasks(activeList.id);
   };
 
-  const deleteTask = (id: string) => {
-    Alert.alert('Delete Task', 'Remove this task?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          await taskService.deleteTask(uid, id);
-          if (activeList) loadTasks(activeList.id);
-        },
-      },
-    ]);
+  const deleteTask = async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    await taskService.deleteTask(uid, id);
+    if (activeList) loadTasks(activeList.id);
+    showSnackbar('Task deleted', async () => {
+      await taskService.addTask(uid, task);
+      if (activeList) loadTasks(activeList.id);
+    });
   };
 
   // ── LISTS VIEW ──
@@ -287,6 +305,16 @@ export default function TodoPage() {
         )}
       </ScrollView>
 
+      {/* Snackbar */}
+      {snackbar && (
+        <View style={[styles.snackbar, { backgroundColor: isDark ? '#1E3A54' : '#142030' }]}>
+          <Text style={styles.snackbarText}>{snackbar.message}</Text>
+          <TouchableOpacity onPress={() => { snackbar.undoFn(); setSnackbar(null); }}>
+            <Text style={styles.snackbarUndo}>UNDO</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Task Modal */}
       <Modal visible={taskModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -326,6 +354,18 @@ export default function TodoPage() {
               value={taskDue}
               onChangeText={setTaskDue}
             />
+            <Text style={[styles.label, { color: isDark ? '#AAA' : '#666' }]}>Repeat</Text>
+            <View style={styles.priorityRow}>
+              {(['none', 'daily', 'weekly'] as const).map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.priorityBtn, { borderColor: '#3DBDAA' }, taskRepeat === r && { backgroundColor: '#3DBDAA' }]}
+                  onPress={() => setTaskRepeat(r)}
+                >
+                  <Text style={[styles.priorityText, taskRepeat === r && { color: '#0D1B2A' }]}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setTaskModal(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -383,6 +423,11 @@ function TaskCard({ task, theme, onToggle, onEdit, onDelete }: {
               <Text style={[styles.tagText, { color: theme.textSecondary }]}>{task.subtasks.filter(s => s.completed).length}/{task.subtasks.length} subtasks</Text>
             </View>
           )}
+          {task.repeatInterval && task.repeatInterval !== 'none' && (
+            <View style={[styles.tag, { backgroundColor: '#3DBDAA22' }]}>
+              <Text style={[styles.tagText, { color: '#3DBDAA' }]}>↻ {task.repeatInterval}</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -423,6 +468,16 @@ const styles = StyleSheet.create({
   colorRow: { flexDirection: 'row', gap: 10 },
   colorDot: { width: 28, height: 28, borderRadius: 14 },
   colorDotActive: { borderWidth: 3, borderColor: '#FFF' },
+  // Snackbar
+  snackbar: {
+    position: 'absolute', bottom: 20, left: 16, right: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  snackbarText: { color: '#fff', fontSize: 14, flex: 1 },
+  snackbarUndo: { color: '#3DBDAA', fontSize: 14, fontWeight: '700', marginLeft: 12 },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
   modalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },

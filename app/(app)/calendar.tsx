@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, Modal, TextInput, Alert,
@@ -40,12 +40,89 @@ interface CalEvent {
 
 const EVENTS_KEY = 'calendar_events';
 
+// ── Time Picker ────────────────────────────────────────
+
+function TimePickerField({ label, value, onChange, isDark }: {
+  label: string; value: string; onChange: (v: string) => void; isDark: boolean;
+}) {
+  const hour   = value ? parseInt(value.split(':')[0]) : null;
+  const minute = value ? parseInt(value.split(':')[1]) : 0;
+
+  const emit = (h: number, m: number) =>
+    onChange(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+
+  const adjustH = (delta: number) => {
+    const h = hour === null ? 8 : hour;
+    emit(((h + delta + 24) % 24), minute);
+  };
+  const adjustM = (delta: number) => {
+    const h = hour === null ? 8 : hour;
+    emit(h, ((minute + delta * 5 + 60) % 60));
+  };
+
+  const textColor    = isDark ? '#E8F4FD' : '#142030';
+  const subtleColor  = isDark ? '#7AAFC8' : '#5A7E9B';
+  const borderColor  = isDark ? '#2A3F56' : '#CAE0F0';
+  const bgColor      = isDark ? '#0A1524' : '#F5FAFF';
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={[tp.label, { color: subtleColor }]}>{label}</Text>
+      {hour === null ? (
+        <TouchableOpacity
+          style={[tp.setBtn, { borderColor }]}
+          onPress={() => emit(8, 0)}
+        >
+          <Ionicons name="time-outline" size={14} color={subtleColor} />
+          <Text style={{ color: subtleColor, fontSize: 13 }}>Set time</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={[tp.picker, { borderColor, backgroundColor: bgColor }]}>
+          <View style={tp.col}>
+            <TouchableOpacity onPress={() => adjustH(1)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Ionicons name="chevron-up" size={16} color={subtleColor} />
+            </TouchableOpacity>
+            <Text style={[tp.digit, { color: textColor }]}>{String(hour).padStart(2, '0')}</Text>
+            <TouchableOpacity onPress={() => adjustH(-1)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Ionicons name="chevron-down" size={16} color={subtleColor} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[tp.colon, { color: subtleColor }]}>:</Text>
+          <View style={tp.col}>
+            <TouchableOpacity onPress={() => adjustM(1)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Ionicons name="chevron-up" size={16} color={subtleColor} />
+            </TouchableOpacity>
+            <Text style={[tp.digit, { color: textColor }]}>{String(minute).padStart(2, '0')}</Text>
+            <TouchableOpacity onPress={() => adjustM(-1)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Ionicons name="chevron-down" size={16} color={subtleColor} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={() => onChange('')} style={{ marginLeft: 6 }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Ionicons name="close-circle" size={18} color={subtleColor} />
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const tp = StyleSheet.create({
+  label:  { fontSize: 12, fontWeight: '500', marginBottom: 6 },
+  setBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, padding: 10, borderStyle: 'dashed' },
+  picker: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  col:    { alignItems: 'center', gap: 2 },
+  digit:  { fontSize: 20, fontWeight: '700', minWidth: 28, textAlign: 'center' },
+  colon:  { fontSize: 20, fontWeight: '700', marginHorizontal: 2 },
+});
+
 export default function CalendarPage() {
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [snackbar, setSnackbar] = useState<{ message: string; undoFn: () => void } | null>(null);
+  const snackbarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
 
@@ -108,11 +185,16 @@ export default function CalendarPage() {
     setModal(false);
   };
 
+  const showSnackbar = (message: string, undoFn: () => void) => {
+    if (snackbarTimer.current) clearTimeout(snackbarTimer.current);
+    setSnackbar({ message, undoFn });
+    snackbarTimer.current = setTimeout(() => setSnackbar(null), 3500);
+  };
+
   const handleDelete = async (id: string) => {
-    Alert.alert('Delete Event', 'Remove this event?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => save(events.filter((e) => e.id !== id)) },
-    ]);
+    const previous = [...events];
+    await save(events.filter((e) => e.id !== id));
+    showSnackbar('Event deleted', () => save(previous));
   };
 
   // Build marked dates for calendar
@@ -201,6 +283,16 @@ export default function CalendarPage() {
         )}
       </ScrollView>
 
+      {/* Snackbar */}
+      {snackbar && (
+        <View style={[styles.snackbar, { backgroundColor: isDark ? '#1E3A54' : '#142030' }]}>
+          <Text style={styles.snackbarText}>{snackbar.message}</Text>
+          <TouchableOpacity onPress={() => { snackbar.undoFn(); setSnackbar(null); }}>
+            <Text style={styles.snackbarUndo}>UNDO</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Add/Edit Modal */}
       <Modal visible={modal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -240,21 +332,9 @@ export default function CalendarPage() {
             </ScrollView>
             {/* Times */}
             <View style={styles.timeRow}>
-              <TextInput
-                style={[styles.timeInput, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0' }]}
-                placeholder="Start (e.g. 14:00)"
-                placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
-                value={startTime}
-                onChangeText={setStartTime}
-              />
-              <Text style={{ color: isDark ? '#7AAFC8' : '#5A7E9B', marginHorizontal: 8 }}>→</Text>
-              <TextInput
-                style={[styles.timeInput, { color: isDark ? '#E8F4FD' : '#142030', borderColor: isDark ? '#2A3F56' : '#CAE0F0' }]}
-                placeholder="End (e.g. 16:00)"
-                placeholderTextColor={isDark ? '#456B84' : '#8AAABB'}
-                value={endTime}
-                onChangeText={setEndTime}
-              />
+              <TimePickerField label="Start" value={startTime} onChange={setStartTime} isDark={isDark} />
+              <Text style={{ color: isDark ? '#7AAFC8' : '#5A7E9B', marginHorizontal: 8, marginTop: 20, alignSelf: 'center' }}>→</Text>
+              <TimePickerField label="End" value={endTime} onChange={setEndTime} isDark={isDark} />
             </View>
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setModal(false)}>
@@ -343,9 +423,17 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, backgroundColor: 'transparent',
   },
   chipText: { fontSize: 12, color: '#7AAFC8' },
-  timeRow: { flexDirection: 'row', alignItems: 'center' },
-  timeInput: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14 },
+  timeRow: { flexDirection: 'row', alignItems: 'flex-start' },
   modalBtns: { flexDirection: 'row', gap: 12 },
+  snackbar: {
+    position: 'absolute', bottom: 20, left: 16, right: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  snackbarText: { color: '#fff', fontSize: 14, flex: 1 },
+  snackbarUndo: { color: '#3DBDAA', fontSize: 14, fontWeight: '700', marginLeft: 12 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#2A3F5644', alignItems: 'center' },
   cancelBtnText: { color: '#7AAFC8', fontWeight: '600' },
   confirmBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
