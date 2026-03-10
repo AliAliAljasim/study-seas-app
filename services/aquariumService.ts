@@ -75,13 +75,24 @@ export async function claimStarterEgg(uid: string): Promise<FishEgg | null> {
   return egg;
 }
 
-/** Awards one egg per calendar day on login. Returns null if already awarded today. */
+/** Awards one egg per calendar day on login. Returns null if already awarded today.
+ *  The egg incubates until the next midnight so it's always ready when the daily reward resets. */
 export async function checkDailyLoginEgg(uid: string): Promise<FishEgg | null> {
   const today = new Date().toDateString();
   const last  = await AsyncStorage.getItem(lastLoginKey(uid));
   if (last === today) return null;
   await AsyncStorage.setItem(lastLoginKey(uid), today);
-  return awardEgg(uid);
+
+  // Count down to the next midnight (12:00:00 AM)
+  const now      = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0); // rolls to 00:00:00 the following day
+  const msUntilMidnight = midnight.getTime() - now.getTime();
+
+  const egg  = buildEgg(undefined, msUntilMidnight);
+  const eggs = await loadAndCleanEggs(uid);
+  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify([...eggs, egg]));
+  return egg;
 }
 
 export async function getOwnedFish(uid: string): Promise<OwnedFish[]> {

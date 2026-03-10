@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, Animated, Easing, Alert, useWindowDimensions,
+  SafeAreaView, Animated, Easing, Alert, Modal, useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Rect, Circle } from 'react-native-svg';
@@ -187,10 +187,11 @@ export default function HomePage() {
     }
   }, [step]);
 
-  const [fishCount,    setFishCount]    = useState(0);
-  const [eggCount,     setEggCount]     = useState(0);
-  const [pendingTasks, setPendingTasks] = useState(0);
-  const [biomesCount,  setBiomesCount]  = useState(1);
+  const [fishCount,        setFishCount]        = useState(0);
+  const [eggCount,         setEggCount]         = useState(0);
+  const [pendingTasks,     setPendingTasks]      = useState(0);
+  const [biomesCount,      setBiomesCount]       = useState(1);
+  const [showDailyEggModal, setShowDailyEggModal] = useState(false);
 
   const load = useCallback(async () => {
     if (!uid) return;
@@ -204,7 +205,11 @@ export default function HomePage() {
   }, [uid]);
 
   useEffect(() => {
-    if (uid) { checkDailyLoginEgg(uid); load(); }
+    if (!uid) return;
+    checkDailyLoginEgg(uid).then((egg) => {
+      if (egg) setShowDailyEggModal(true);
+    });
+    load();
   }, [uid, load]);
 
   const handleSignOut = () =>
@@ -322,6 +327,48 @@ export default function HomePage() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* ── Daily login egg modal ── */}
+      <Modal
+        visible={showDailyEggModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDailyEggModal(false)}
+      >
+        <TouchableOpacity
+          style={s.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowDailyEggModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={[s.modalCard, { backgroundColor: isDark ? '#0F1E30' : '#FFFFFF' }]}>
+              {/* Egg glow */}
+              <View style={s.eggGlow}>
+                <Text style={s.eggEmoji}>🥚</Text>
+              </View>
+              <Text style={[s.modalTitle, { color: isDark ? '#E8F4FD' : '#0D1B2A' }]}>
+                Daily Egg!
+              </Text>
+              <Text style={[s.modalBody, { color: isDark ? '#4D7A96' : '#7AAFC8' }]}>
+                Welcome back! You've earned a free egg for logging in today. It'll be ready to hatch at midnight — come back then!
+              </Text>
+              <TouchableOpacity
+                style={s.modalBtn}
+                onPress={() => {
+                  setShowDailyEggModal(false);
+                  router.push('/aquarium');
+                }}
+              >
+                <Text style={s.modalBtnText}>Go to Aquarium 🌊</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowDailyEggModal(false)} style={{ marginTop: 10 }}>
+                <Text style={{ color: isDark ? '#2A4A64' : '#9BBFD4', fontSize: 13 }}>Maybe later</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -381,6 +428,31 @@ const s = StyleSheet.create({
   featureText: { flex: 1 },
   featureTitle: { fontSize: 14, fontWeight: '700' },
   featureSub:   { fontSize: 11, fontWeight: '500', marginTop: 1 },
+
+  // Daily egg modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  modalCard: {
+    borderRadius: 28, padding: 28, alignItems: 'center', gap: 10,
+    width: '100%', maxWidth: 340,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  eggGlow: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: '#3DBDAA22',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
+  },
+  eggEmoji:    { fontSize: 52 },
+  modalTitle:  { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  modalBody:   { fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  modalBtn: {
+    marginTop: 6, backgroundColor: '#2E86AB',
+    borderRadius: 16, paddingHorizontal: 28, paddingVertical: 13, width: '100%', alignItems: 'center',
+  },
+  modalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Remake
   remakeBtn: {

@@ -1507,36 +1507,94 @@ function FilterChip({ label, active, color, onPress }: {
 function BestiaryRow({ species, owned, count, theme }: {
   species: FishSpecies; owned: boolean; count: number; theme: ReturnType<typeof getTheme>;
 }) {
-  const rc  = RARITY_COLORS[species.rarity];
-  const vis = SPECIES_VISUALS[species.id];
+  const [modalVisible, setModalVisible] = useState(false);
+  const rc = RARITY_COLORS[species.rarity];
   return (
-    <View style={[styles.bestiaryRow, { backgroundColor: theme.surface }]}>
-      <View style={[styles.rarityBar, { backgroundColor: owned ? rc : rc + '40' }]} />
-      <View style={[styles.bestiaryPreview, { backgroundColor: owned ? rc + '18' : theme.background }]}>
-        {owned ? (
-          <FishSVG speciesId={species.id} size={34} />
-        ) : (
-          <Text style={{ fontSize: 28, opacity: 0.2 }}>?</Text>
-        )}
-      </View>
-      <View style={{ flex: 1, opacity: owned ? 1 : 0.45 }}>
-        <Text style={[styles.bestiaryName, { color: theme.text }]}>{owned ? species.name : '???'}</Text>
-        <Text style={[styles.bestiaryDesc, { color: theme.textSecondary }]} numberOfLines={2}>
-          {owned ? species.description : 'Not yet discovered'}
-        </Text>
-      </View>
-      <View style={{ alignItems: 'flex-end', gap: 4, paddingRight: 14 }}>
-        <View style={[styles.rarityBadge, { backgroundColor: rc + '22' }]}>
-          <Text style={[styles.rarityBadgeText, { color: rc, fontWeight: '700' }]}>
-            {RARITY_LABELS[species.rarity]}
-          </Text>
+    <>
+      <TouchableOpacity
+        activeOpacity={owned && species.journal ? 0.75 : 1}
+        onPress={() => owned && species.journal && setModalVisible(true)}
+      >
+        <View style={[styles.bestiaryRow, { backgroundColor: theme.surface }]}>
+          <View style={[styles.rarityBar, { backgroundColor: owned ? rc : rc + '40', alignSelf: 'stretch' }]} />
+          <View style={[styles.bestiaryPreview, { backgroundColor: owned ? rc + '18' : theme.background }]}>
+            {owned ? (
+              <FishSVG speciesId={species.id} size={34} />
+            ) : (
+              <Text style={{ fontSize: 28, opacity: 0.2 }}>?</Text>
+            )}
+          </View>
+          <View style={{ flex: 1, opacity: owned ? 1 : 0.45 }}>
+            <Text style={[styles.bestiaryName, { color: theme.text }]}>{owned ? species.name : '???'}</Text>
+            <Text style={[styles.bestiaryDesc, { color: theme.textSecondary }]} numberOfLines={2}>
+              {owned ? species.description : 'Not yet discovered'}
+            </Text>
+          </View>
+          <View style={{ alignItems: 'flex-end', gap: 4, paddingRight: 14 }}>
+            <View style={[styles.rarityBadge, { backgroundColor: rc + '22' }]}>
+              <Text style={[styles.rarityBadgeText, { color: rc, fontWeight: '700' }]}>
+                {RARITY_LABELS[species.rarity]}
+              </Text>
+            </View>
+            {owned && count > 1 && (
+              <Text style={{ fontSize: 11, color: theme.textSecondary }}>x{count}</Text>
+            )}
+            {owned && species.journal && (
+              <Ionicons name="book-outline" size={14} color={rc} />
+            )}
+            {owned && <Ionicons name="checkmark-circle" size={16} color={rc} />}
+          </View>
         </View>
-        {owned && count > 1 && (
-          <Text style={{ fontSize: 11, color: theme.textSecondary }}>x{count}</Text>
-        )}
-        {owned && <Ionicons name="checkmark-circle" size={16} color={rc} />}
-      </View>
-    </View>
+      </TouchableOpacity>
+
+      {/* Journal modal */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+          activeOpacity={1}
+          onPress={() => setModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <View style={{ backgroundColor: theme.surface, borderRadius: 24, overflow: 'hidden', width: '100%', maxWidth: 380 }}>
+              {/* Header strip */}
+              <View style={{ backgroundColor: rc, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 14, width: 56, height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                    <FishSVG speciesId={species.id} size={38} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '700', letterSpacing: 1.2 }}>
+                      {RARITY_LABELS[species.rarity].toUpperCase()} — FIELD NOTES
+                    </Text>
+                    <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 }}>
+                      {species.name}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setModalVisible(false)} style={{ padding: 4 }}>
+                    <Ionicons name="close-circle" size={26} color="rgba(255,255,255,0.85)" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Body */}
+              <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+                <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.textSecondary, marginBottom: 14 }}>
+                  "{species.description}"
+                </Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: theme.text }}>
+                  {species.journal}
+                </Text>
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 }
 
