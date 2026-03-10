@@ -8,9 +8,11 @@ import Svg, {
   LinearGradient as SvgGradient, Stop, G,
 } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
+import { useTutorial } from '../../context/TutorialContext';
 import { getEggs, getOwnedFish, hatchEgg, awardEgg, loadSamplePack, claimStarterEgg, clearOwnedFish, skipEggTimer } from '../../services/aquariumService';
 import {
   FishEgg, OwnedFish, FishSpecies,
@@ -1545,6 +1547,8 @@ export default function AquariumPage() {
   const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
+  const router = useRouter();
+  const { step, setSpotlight, advance, isActive } = useTutorial();
   const [tab, setTab]           = useState<Tab>('tank');
   const [eggs, setEggs]         = useState<FishEgg[]>([]);
   const [ownedFish, setOwned]   = useState<OwnedFish[]>([]);
@@ -1552,6 +1556,72 @@ export default function AquariumPage() {
   const [selectedBiome, setSelectedBiome] = useState<BiomeKey | null>(null);
   const [hatchingEgg, setHatchingEgg] = useState<FishEgg | null>(null);
   const [justUnlockedBiomes, setJustUnlockedBiomes] = useState<BiomeCfg[]>([]);
+
+  const bestiaryScrollRef = useRef<ScrollView>(null);
+  const tutorialStepRef = useRef(step);
+  const shallowsNodeRef = useRef<View>(null);
+  const backBtnRef      = useRef<View>(null);
+  const tankTabRef      = useRef<View>(null);
+  const bestiaryTabRef  = useRef<View>(null);
+  const tabBarRef       = useRef<View>(null);
+  const eggGridRef      = useRef<View>(null);
+
+  useEffect(() => { tutorialStepRef.current = step; }, [step]);
+
+  // Auto-tab switching + spotlight measurement per step
+  useEffect(() => {
+    if (step === 'aquarium_biome') {
+      setTab('tank');
+      setSelectedBiome(null);
+      setTimeout(() => {
+        shallowsNodeRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) setSpotlight({ x, y, w, h });
+        });
+      }, 600);
+    } else if (step === 'aquarium_empty') {
+      // selectedBiome is already 'shallows' from user tapping it
+      // Use two attempts to handle native layout timing
+      const measureBack = () => backBtnRef.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0) setSpotlight({ x, y, w, h });
+        else setTimeout(measureBack, 400);
+      });
+      setTimeout(measureBack, 400);
+    } else if (step === 'egg_hatch') {
+      setTab('eggs');
+      setTimeout(() => {
+        eggGridRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) setSpotlight({ x, y, w, h });
+        });
+      }, 500);
+    } else if (step === 'tank_return') {
+      setTimeout(() => {
+        tabBarRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) setSpotlight({ x, y, w, h });
+        });
+      }, 300);
+    } else if (step === 'bestiary_view') {
+      setTimeout(() => {
+        tabBarRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) setSpotlight({ x, y, w, h });
+        });
+      }, 300);
+      setTimeout(() => {
+        bestiaryScrollRef.current?.scrollToEnd({ animated: true });
+      }, 500);
+      setTimeout(() => {
+        bestiaryScrollRef.current?.scrollTo({ y: 0, animated: true });
+      }, 1800);
+    } else {
+      setSpotlight(null);
+    }
+  }, [step]);
+
+  // Tutorial-aware tab handler
+  const handleTabPress = (t: Tab) => {
+    setTab(t);
+    if (t === 'tank' && tutorialStepRef.current === 'tank_return') advance();
+    if (t === 'bestiary' && tutorialStepRef.current === 'bestiary_view') advance();
+  };
 
   const load = useCallback(async () => {
     const validIds = new Set(FISH_SPECIES.map((s) => s.id));
@@ -1586,18 +1656,17 @@ export default function AquariumPage() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
 
       {/* Pill tab bar */}
-      <View style={[styles.tabBar, { backgroundColor: theme.surface }]}>
+      <View ref={tabBarRef} collapsable={false} style={[styles.tabBar, { backgroundColor: theme.surface }]}>
         {(['tank', 'eggs', 'bestiary'] as Tab[]).map((t) => {
           const active = tab === t;
           return (
             <TouchableOpacity
               key={t}
               style={[styles.tabBtn, active && { backgroundColor: '#3DBDAA22' }]}
-              onPress={() => setTab(t)}
+              onPress={() => handleTabPress(t)}
             >
-              <Ionicons name={ICONS[t]} size={15} color={active ? '#29B6F6' : theme.textSecondary} />
-              <Text style={[styles.tabLabel, { color: active ? '#29B6F6' : theme.textSecondary },
-                active && { fontWeight: '700' }]}>
+              <Ionicons name={ICONS[t]} size={18} color={active ? '#29B6F6' : '#7AAFC8'} />
+              <Text style={{ fontSize: 11, fontWeight: active ? '700' : '500', color: active ? '#29B6F6' : '#7AAFC8', textAlign: 'center' }}>
                 {LABELS[t]}
               </Text>
             </TouchableOpacity>
@@ -1605,7 +1674,7 @@ export default function AquariumPage() {
         })}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={bestiaryScrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ══ TANK ══ */}
         {tab === 'tank' && (() => {
@@ -1629,10 +1698,18 @@ export default function AquariumPage() {
               <View style={{ gap: 12 }}>
                 {/* Back header */}
                 <View style={styles.tankHeader}>
-                  <TouchableOpacity style={styles.tankBackBtn} onPress={() => setSelectedBiome(null)}>
-                    <Ionicons name="chevron-back" size={18} color={isDark ? '#AAC8E0' : '#2A5F80'} />
-                    <Text style={[styles.tankBackLabel, { color: isDark ? '#AAC8E0' : '#2A5F80' }]}>Map</Text>
-                  </TouchableOpacity>
+                  <View ref={backBtnRef} collapsable={false}>
+                    <TouchableOpacity style={styles.tankBackBtn} onPress={() => {
+                      setSelectedBiome(null);
+                      if (tutorialStepRef.current === 'aquarium_empty') {
+                        advance();
+                        router.push('/timer');
+                      }
+                    }}>
+                      <Ionicons name="chevron-back" size={18} color={isDark ? '#AAC8E0' : '#2A5F80'} />
+                      <Text style={[styles.tankBackLabel, { color: isDark ? '#AAC8E0' : '#2A5F80' }]}>Map</Text>
+                    </TouchableOpacity>
+                  </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={[styles.biomeDot, { backgroundColor: entry.biome.dotColor }]} />
                     <Text style={[styles.tankHeaderName, { color: isDark ? '#E8F4FF' : '#1A3A55' }]}>
@@ -1691,15 +1768,24 @@ export default function AquariumPage() {
                     </Text>
                     <View style={styles.mapNodesRow}>
                       {zoneBiomes.map(({ biome, biomeFish, locked }) => (
-                        <TouchableOpacity
+                        <View
                           key={biome.id}
+                          ref={biome.id === 'shallows' ? shallowsNodeRef : undefined}
+                          collapsable={false}
+                        >
+                        <TouchableOpacity
                           style={[
                             styles.mapNode,
                             { backgroundColor: isDark ? '#0A1E30' : '#0D2A42',
                               borderColor: locked ? (isDark ? '#1A2E3E' : '#1A3050') : biome.dotColor + '88',
                               opacity: locked ? 0.6 : 1 },
                           ]}
-                          onPress={() => setSelectedBiome(biome.id)}
+                          onPress={() => {
+                            setSelectedBiome(biome.id);
+                            if (biome.id === 'shallows' && tutorialStepRef.current === 'aquarium_biome') {
+                              advance();
+                            }
+                          }}
                           activeOpacity={0.75}
                         >
                           {/* Color accent bar */}
@@ -1719,6 +1805,7 @@ export default function AquariumPage() {
                             </View>
                           )}
                         </TouchableOpacity>
+                        </View>
                       ))}
                     </View>
                   </View>
@@ -1776,7 +1863,7 @@ export default function AquariumPage() {
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
                   {eggs.length} EGG{eggs.length !== 1 ? 'S' : ''} WAITING
                 </Text>
-                <View style={styles.eggGrid}>
+                <View ref={eggGridRef} collapsable={false} style={styles.eggGrid}>
                   {eggs.map((egg) => (
                     <EggCard
                       key={egg.id}
@@ -1924,6 +2011,8 @@ export default function AquariumPage() {
               (b) => !oldUnlocked.has(b.id) && newUnlocked.has(b.id),
             );
             if (justUnlocked.length > 0) setJustUnlockedBiomes(justUnlocked);
+            // Tutorial: advance after first hatch
+            if (tutorialStepRef.current === 'egg_hatch') advance();
           }}
         />
       )}
@@ -1949,8 +2038,8 @@ const styles = StyleSheet.create({
     borderRadius: 18, padding: 5, gap: 4,
   },
   tabBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 13,
+    flex: 1, flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', paddingVertical: 8, borderRadius: 13,
   },
   tabLabel: { fontSize: 13 },
 

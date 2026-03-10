@@ -161,7 +161,7 @@ export function computeUnlockedBiomes(ownedFish: OwnedFish[]): Set<BiomeKey> {
 // Otter is exclusive to the starter egg — never appears in random rolls
 const ROLLABLE = FISH_SPECIES.filter((f) => f.id !== 'otter');
 
-export function rollFishSpecies(allowedSpeciesIds?: Set<string>): FishSpecies {
+export function rollFishSpecies(allowedSpeciesIds?: Set<string>, ownedSpeciesIds?: Set<string>): FishSpecies {
   const pool = allowedSpeciesIds
     ? ROLLABLE.filter((f) => allowedSpeciesIds.has(f.id))
     : ROLLABLE;
@@ -181,5 +181,14 @@ export function rollFishSpecies(allowedSpeciesIds?: Set<string>): FishSpecies {
   }
 
   const rarityPool = available.filter((f) => f.rarity === chosenRarity);
-  return rarityPool[Math.floor(Math.random() * rarityPool.length)];
+
+  // Already-owned species get half the weight so new discoveries are favoured
+  const weights = rarityPool.map((f) => (ownedSpeciesIds?.has(f.id) ? 0.5 : 1.0));
+  const weightTotal = weights.reduce((a, b) => a + b, 0);
+  let w = Math.random() * weightTotal;
+  for (let i = 0; i < rarityPool.length; i++) {
+    w -= weights[i];
+    if (w <= 0) return rarityPool[i];
+  }
+  return rarityPool[rarityPool.length - 1];
 }

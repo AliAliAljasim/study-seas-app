@@ -8,6 +8,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { awardEgg } from '../../services/aquariumService';
+import { useTutorial } from '../../context/TutorialContext';
 
 type Technique = 'Flowtime' | 'Pomodoro' | '52/17 Rule';
 
@@ -29,6 +30,7 @@ export default function TimerPage() {
   const { user } = useAuth();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
+  const { step, setSpotlight, advance } = useTutorial();
 
   const [technique, setTechnique] = useState<Technique>('Pomodoro');
   const [phase, setPhase] = useState<TimerPhase>('focus');
@@ -41,10 +43,40 @@ export default function TimerPage() {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const focusStartRef = useRef<number>(0);
+  const playBtnRef = useRef<View>(null);
+  const tutorialStepRef = useRef(step);
+  const phaseCompleteRef = useRef(false);
+
+  useEffect(() => { tutorialStepRef.current = step; }, [step]);
+
+  useEffect(() => {
+    if (step === 'timer_prompt') {
+      // Set to 3-second tutorial session but don't auto-start
+      stopTimer();
+      setPhase('focus');
+      setSeconds(3);
+      // Spotlight the play button
+      setTimeout(() => {
+        playBtnRef.current?.measureInWindow((x, y, w, h) => {
+          if (w > 0) setSpotlight({ x, y, w, h });
+        });
+      }, 600);
+    } else {
+      setSpotlight(null);
+    }
+  }, [step]);
 
   useEffect(() => {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
+
+  // Trigger phase completion outside the state updater to avoid React invariant violation
+  useEffect(() => {
+    if (seconds === 0 && phaseCompleteRef.current) {
+      phaseCompleteRef.current = false;
+      handlePhaseComplete();
+    }
+  }, [seconds]);
 
   const resetToPhase = (t: Technique, p: TimerPhase) => {
     const cfg = TECHNIQUES[t];
@@ -68,7 +100,7 @@ export default function TimerPage() {
         if (s <= 1) {
           clearInterval(intervalRef.current!);
           setRunning(false);
-          handlePhaseComplete();
+          phaseCompleteRef.current = true;
           return 0;
         }
         return s - 1;
@@ -90,6 +122,10 @@ export default function TimerPage() {
   const handlePhaseComplete = () => {
     const cfg = TECHNIQUES[technique];
     if (phase === 'focus') {
+      // Tutorial: advance after first focus session
+      if (tutorialStepRef.current === 'timer_prompt') {
+        advance();
+      }
       const elapsed = Math.round((Date.now() - focusStartRef.current) / 1000);
       setTotalFocusSeconds((t) => t + elapsed);
       setCompletedSessions((c) => c + 1);
@@ -175,12 +211,14 @@ export default function TimerPage() {
           <TouchableOpacity style={styles.secondaryBtn} onPress={resetTimer}>
             <Ionicons name="refresh" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: phaseColor }]}
-            onPress={running ? stopTimer : startTimer}
-          >
-            <Ionicons name={running ? 'pause' : 'play'} size={32} color="#0D1B2A" />
-          </TouchableOpacity>
+          <View ref={playBtnRef} collapsable={false}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: phaseColor }]}
+              onPress={running ? stopTimer : startTimer}
+            >
+              <Ionicons name={running ? 'pause' : 'play'} size={32} color="#0D1B2A" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Dev: 3-second test timer */}

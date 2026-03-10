@@ -110,7 +110,8 @@ export async function hatchEgg(uid: string, eggId: string): Promise<{ fish: Owne
       for (const id of BIOME_SPECIES[biomeKey]) allowedIds.add(id);
     }
     allowedIds.delete('otter'); // never rollable
-    species = rollFishSpecies(allowedIds);
+    const ownedSpeciesIds = new Set(currentOwned.map((f) => f.speciesId));
+    species = rollFishSpecies(allowedIds, ownedSpeciesIds);
   }
 
   const fish: OwnedFish = { id: generateId(), speciesId: species.id, hatchedAt: new Date().toISOString() };
