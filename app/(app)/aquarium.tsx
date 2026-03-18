@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, Alert, Animated, Easing, Modal,
+  Alert, Animated, Easing, Modal, Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, {
   Path, Ellipse, Circle, Rect, Defs,
   LinearGradient as SvgGradient, Stop, G,
@@ -13,13 +14,15 @@ import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useTutorial } from '../../context/TutorialContext';
-import { getEggs, getOwnedFish, hatchEgg, awardEgg, loadSamplePack, claimStarterEgg, clearOwnedFish, skipEggTimer } from '../../services/aquariumService';
+import { getOwnedFish, hatchEgg, claimStarterEgg, clearOwnedFish, subscribeToEggs, subscribeToFish } from '../../services/aquariumService';
 import {
   FishEgg, OwnedFish, FishSpecies,
   FISH_SPECIES, RARITY_COLORS, RARITY_LABELS, FishRarity,
   FishHabitat, HABITAT_LABELS, BiomeKey, computeUnlockedBiomes,
 } from '../../models/aquariumModels';
 import FishSVG, { SPECIES_VISUALS, getFishDimensions } from '../../components/FishSVG';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('screen');
 
 type Tab = 'tank' | 'eggs' | 'bestiary';
 
@@ -1337,8 +1340,8 @@ function fmtCountdown(ms: number): string {
 
 // ─── Egg card ─────────────────────────────────────────
 
-function EggCard({ egg, onHatch, onSkip, theme }: {
-  egg: FishEgg; onHatch: () => void; onSkip: () => void; theme: ReturnType<typeof getTheme>;
+function EggCard({ egg, onHatch, theme }: {
+  egg: FishEgg; onHatch: () => void; theme: ReturnType<typeof getTheme>;
 }) {
   const now       = useNow();
   const readyAt   = new Date(egg.readyAt).getTime();
@@ -1418,10 +1421,6 @@ function EggCard({ egg, onHatch, onSkip, theme }: {
           <Text style={[styles.eggTimer, { color: theme.textSecondary }]}>
             Ready in {fmtCountdown(msUntilReady)}
           </Text>
-          <TouchableOpacity style={styles.eggSkipBtn} onPress={onSkip}>
-            <Ionicons name="play-skip-forward-outline" size={11} color="#7AAFC8" />
-            <Text style={styles.eggSkipText}>Skip</Text>
-          </TouchableOpacity>
         </>
       )}
     </TouchableOpacity>
@@ -1681,15 +1680,17 @@ export default function AquariumPage() {
     if (t === 'bestiary' && tutorialStepRef.current === 'bestiary_view') advance();
   };
 
-  const load = useCallback(async () => {
-    const validIds = new Set(FISH_SPECIES.map((s) => s.id));
-    const [e, f] = await Promise.all([getEggs(uid), getOwnedFish(uid)]);
-    setEggs(e);
-    setOwned(f.filter((fish) => validIds.has(fish.speciesId)));
-  }, [uid]);
+  // Claim starter egg on first open
+  useEffect(() => { if (uid) claimStarterEgg(uid); }, [uid]);
 
-  // Claim starter otter egg on first open, then load
-  useEffect(() => { if (uid) claimStarterEgg(uid).then(() => load()); }, [uid, load]);
+  // Real-time subscriptions for eggs and fish
+  useEffect(() => {
+    if (!uid) return;
+    const validIds = new Set(FISH_SPECIES.map((s) => s.id));
+    const unsubEggs = subscribeToEggs(uid, setEggs);
+    const unsubFish = subscribeToFish(uid, (fish) => setOwned(fish.filter((f) => validIds.has(f.speciesId))));
+    return () => { unsubEggs(); unsubFish(); };
+  }, [uid]);
 
   const discoveredIds = new Set(ownedFish.map((f) => f.speciesId));
   const uniqueOwned   = discoveredIds.size;
@@ -1885,30 +1886,6 @@ export default function AquariumPage() {
               </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                style={[styles.testEggBtn, { backgroundColor: theme.surface }]}
-                onPress={async () => { await awardEgg(uid); await load(); }}
-              >
-                <Ionicons name="flask-outline" size={15} color={theme.textSecondary} />
-                <Text style={[styles.testEggText, { color: theme.textSecondary }]}>Add Test Egg</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.testEggBtn, { backgroundColor: theme.surface }]}
-                onPress={() => Alert.alert(
-                  'Load Sample Pack',
-                  'Add one of each fish from the Pixel Gnome Fish Pack to your collection?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Load', onPress: async () => { await loadSamplePack(uid); await load(); } },
-                  ],
-                )}
-              >
-                <Ionicons name="fish-outline" size={15} color="#29B6F6" />
-                <Text style={[styles.testEggText, { color: '#29B6F6' }]}>Sample Pack</Text>
-              </TouchableOpacity>
-            </View>
-
             {eggs.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: theme.surface }]}>
                 <Text style={[styles.emptyTitle, { color: theme.text }]}>No eggs yet</Text>
@@ -1927,7 +1904,6 @@ export default function AquariumPage() {
                       key={egg.id}
                       egg={egg}
                       onHatch={() => setHatchingEgg(egg)}
-                      onSkip={() => skipEggTimer(uid, egg.id).then(load)}
                       theme={theme}
                     />
                   ))}
@@ -2058,12 +2034,10 @@ export default function AquariumPage() {
           onComplete={async () => {
             const oldUnlocked = computeUnlockedBiomes(ownedFish);
             setHatchingEgg(null);
-            // Load fresh data directly so we can diff biomes in the same call
+            // Fetch new fish for biome diff (subscription will update display separately)
             const validIds = new Set(FISH_SPECIES.map((s) => s.id));
-            const [e, f] = await Promise.all([getEggs(uid), getOwnedFish(uid)]);
+            const f = await getOwnedFish(uid);
             const newFish = f.filter((fish) => validIds.has(fish.speciesId));
-            setEggs(e);
-            setOwned(newFish);
             const newUnlocked = computeUnlockedBiomes(newFish);
             const justUnlocked = BIOME_CONFIGS.filter(
               (b) => !oldUnlocked.has(b.id) && newUnlocked.has(b.id),
@@ -2234,7 +2208,7 @@ const styles = StyleSheet.create({
   mapNodeEnter:   { fontSize: 11, fontWeight: '700' },
 
   // ── Hatch modal ──
-  hatchOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', padding: 28 },
+  hatchOverlay:    { width: SCREEN_W, height: SCREEN_H, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', padding: 28 },
   hatchCard:       { width: '100%', maxWidth: 320, backgroundColor: '#0B1C2E', borderRadius: 30, padding: 28, alignItems: 'center', gap: 18, borderWidth: 1.5, borderColor: '#1A3050' },
   hatchTitle:      { fontSize: 22, fontWeight: '800', textAlign: 'center' },
   hatchCenter:     { width: 140, height: 140, justifyContent: 'center', alignItems: 'center' },

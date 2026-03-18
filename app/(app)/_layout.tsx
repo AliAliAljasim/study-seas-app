@@ -1,9 +1,16 @@
-import { Stack } from 'expo-router';
+import { Stack, Redirect } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import TutorialOverlay from '../../components/TutorialOverlay';
 
 export default function AppLayout() {
+  const { user, emailVerified, loading } = useAuth();
   const { isDark } = useTheme();
+
+  // Hard guard — if not signed in or email not verified, never render app screens
+  if (!loading && (!user || !emailVerified)) {
+    return <Redirect href={user ? '/(auth)/verify-email' : '/(auth)/sign-in'} />;
+  }
   const bg = isDark ? '#0D1B2A' : '#EEF5FB';
   const text = isDark ? '#E8F4FD' : '#142030';
 

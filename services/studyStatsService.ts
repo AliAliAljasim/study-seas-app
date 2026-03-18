@@ -1,10 +1,13 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  collection, doc, getDoc, getDocs, setDoc, query, where,
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { generateId } from '../models/taskModels';
 
-// ── Storage keys ─────────────────────────────────────────
-const sessionsKey  = (uid: string) => `study_sessions_${uid}`;
-const streakKey    = (uid: string) => `study_streak_${uid}`;
-const completedKey = (uid: string) => `completed_log_${uid}`;
+// ── Firestore paths ───────────────────────────────────
+const sessionsCol   = (uid: string) => collection(db, 'users', uid, 'sessions');
+const completedCol  = (uid: string) => collection(db, 'users', uid, 'completedLog');
+const metaDoc       = (uid: string) => doc(db, 'users', uid, 'meta');
 
 interface StudySession {
   id: string;
@@ -14,48 +17,66 @@ interface StudySession {
 }
 interface StreakData { lastDate: string; count: number; }
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
+/** Returns YYYY-MM-DD in the device's local timezone. */
+function localDateStr(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
+function todayStr(): string { return localDateStr(); }
 function nDaysAgoStr(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
+  return localDateStr(d);
 }
 
-// ── Session logging ───────────────────────────────────────
+// ── Session logging ───────────────────────────────────
 
 export async function logSession(uid: string, durationSeconds: number, taskId?: string): Promise<void> {
   const today = todayStr();
+  const session: StudySession = { id: generateId(), date: today, durationSeconds, ...(taskId ? { taskId } : {}) };
+  await setDoc(doc(sessionsCol(uid), session.id), session);
 
-  // Persist session (keep 30 days)
-  const json = await AsyncStorage.getItem(sessionsKey(uid));
-  const sessions: StudySession[] = json ? JSON.parse(json) : [];
-  const cutoff = nDaysAgoStr(30);
-  const kept = sessions.filter((s) => s.date >= cutoff);
-  kept.push({ id: generateId(), date: today, durationSeconds, taskId });
-  await AsyncStorage.setItem(sessionsKey(uid), JSON.stringify(kept));
-
-  // Update study streak
-  const sJson = await AsyncStorage.getItem(streakKey(uid));
-  const streak: StreakData = sJson ? JSON.parse(sJson) : { lastDate: '', count: 0 };
-  if (streak.lastDate === today) return; // already logged today
+  // Update streak in meta doc
+  const metaSnap = await getDoc(metaDoc(uid));
+  const meta = metaSnap.exists() ? metaSnap.data() : {};
+  const streak: StreakData = { lastDate: meta.streakLastDate ?? '', count: meta.streakCount ?? 0 };
+  if (streak.lastDate === today) return;
   const yesterday = nDaysAgoStr(1);
   const count = streak.lastDate === yesterday ? streak.count + 1 : 1;
-  await AsyncStorage.setItem(streakKey(uid), JSON.stringify({ lastDate: today, count }));
+  await setDoc(metaDoc(uid), { streakLastDate: today, streakCount: count }, { merge: true });
 }
 
-// ── Task completion logging ───────────────────────────────
+// ── Task completion logging ───────────────────────────
 
 export async function logTaskCompletion(uid: string, taskId: string): Promise<void> {
-  const json = await AsyncStorage.getItem(completedKey(uid));
-  const log: { date: string; taskId: string }[] = json ? JSON.parse(json) : [];
-  const kept = log.filter((l) => l.date >= nDaysAgoStr(30));
-  kept.push({ date: todayStr(), taskId });
-  await AsyncStorage.setItem(completedKey(uid), JSON.stringify(kept));
+  const entry = { id: generateId(), date: todayStr(), taskId };
+  await setDoc(doc(completedCol(uid), entry.id), entry);
 }
 
-// ── CGPA computation (mirrors grades.tsx logic) ───────────
+// ── Daily hours for analytics chart ──────────────────
+
+export async function getDailyHours(uid: string): Promise<{ date: string; hours: number }[]> {
+  const cutoff = nDaysAgoStr(6);
+  const q = query(sessionsCol(uid), where('date', '>=', cutoff));
+  const snap = await getDocs(q);
+  const sessions = snap.docs.map((d) => d.data() as StudySession);
+
+  const days: { date: string; hours: number }[] = [];
+  for (let i = 6; i >= 0; i--) days.push({ date: nDaysAgoStr(i), hours: 0 });
+
+  const dateSet = new Set(days.map((d) => d.date));
+  for (const s of sessions) {
+    if (dateSet.has(s.date)) {
+      const entry = days.find((d) => d.date === s.date);
+      if (entry) entry.hours += s.durationSeconds / 3600;
+    }
+  }
+  return days;
+}
+
+// ── CGPA computation ──────────────────────────────────
 
 interface _Assignment { score: number; maxScore: number; weight: number; }
 interface _Course     { credits: number; assignments: _Assignment[]; }
@@ -74,13 +95,11 @@ function _pctToGPA(pct: number): number {
   if (pct >= 60) return 1.0; return 0.0;
 }
 
-async function computeCGPA(): Promise<number | null> {
-  const [cJson, pJson] = await Promise.all([
-    AsyncStorage.getItem('grades_courses'),
-    AsyncStorage.getItem('grades_past_semesters'),
-  ]);
-  const courses: _Course[]  = cJson ? JSON.parse(cJson) : [];
-  const past:   _PastSem[] = pJson ? JSON.parse(pJson) : [];
+async function computeCGPA(uid: string): Promise<number | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'data', 'grades'));
+  const data = snap.exists() ? snap.data() : {};
+  const courses: _Course[]  = data.courses ?? [];
+  const past:   _PastSem[] = data.pastSemesters ?? [];
 
   const graded = courses.filter((c) => _courseGrade(c) !== null);
   const all: _PastSem[] = [...past];
@@ -95,7 +114,7 @@ async function computeCGPA(): Promise<number | null> {
   return tc > 0 ? tp / tc : null;
 }
 
-// ── Weekly stats ──────────────────────────────────────────
+// ── Weekly stats ──────────────────────────────────────
 
 export interface WeeklyStats {
   hours: number;
@@ -106,24 +125,26 @@ export interface WeeklyStats {
 
 export async function getWeeklyStats(uid: string): Promise<WeeklyStats> {
   const cutoff = nDaysAgoStr(7);
-  const [sessJson, streakJson, compJson, cgpa] = await Promise.all([
-    AsyncStorage.getItem(sessionsKey(uid)),
-    AsyncStorage.getItem(streakKey(uid)),
-    AsyncStorage.getItem(completedKey(uid)),
-    computeCGPA(),
+  const today = todayStr();
+  const yesterday = nDaysAgoStr(1);
+
+  const [sessSnap, compSnap, metaSnap, cgpa] = await Promise.all([
+    getDocs(query(sessionsCol(uid), where('date', '>=', cutoff))),
+    getDocs(query(completedCol(uid), where('date', '>=', cutoff))),
+    getDoc(metaDoc(uid)),
+    computeCGPA(uid),
   ]);
 
-  const sessions: StudySession[]            = sessJson   ? JSON.parse(sessJson)   : [];
-  const streak:   StreakData                = streakJson ? JSON.parse(streakJson) : { lastDate: '', count: 0 };
-  const log:      { date: string }[]        = compJson   ? JSON.parse(compJson)   : [];
-
-  const weekSessions = sessions.filter((s) => s.date >= cutoff);
-  const totalSec     = weekSessions.reduce((s, x) => s + x.durationSeconds, 0);
+  const totalSec = sessSnap.docs.reduce((s, d) => s + (d.data().durationSeconds ?? 0), 0);
+  const meta = metaSnap.exists() ? metaSnap.data() : {};
+  const streakLastDate = meta.streakLastDate ?? '';
+  const streakCount = meta.streakCount ?? 0;
+  const activeStreak = (streakLastDate === today || streakLastDate === yesterday) ? streakCount : 0;
 
   return {
     hours: Math.round((totalSec / 3600) * 10) / 10,
-    streak: streak.count,
-    tasksCompleted: log.filter((l) => l.date >= cutoff).length,
+    streak: activeStreak,
+    tasksCompleted: compSnap.size,
     cgpa,
   };
 }

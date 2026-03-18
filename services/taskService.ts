@@ -1,67 +1,72 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  collection, doc, getDocs, setDoc, deleteDoc, writeBatch, query, where, onSnapshot,
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { Task, TaskList } from '../models/taskModels';
 
-const tasksKey = (uid: string) => `tasks_${uid}`;
-const listsKey = (uid: string) => `task_lists_${uid}`;
+const tasksCol  = (uid: string) => collection(db, 'users', uid, 'tasks');
+const listsCol  = (uid: string) => collection(db, 'users', uid, 'lists');
+const taskDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'tasks', id);
+const listDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'lists', id);
 
 export async function getAllTasks(uid: string): Promise<Task[]> {
-  const json = await AsyncStorage.getItem(tasksKey(uid));
-  if (!json) return [];
-  return JSON.parse(json) as Task[];
+  const snap = await getDocs(tasksCol(uid));
+  return snap.docs.map((d) => d.data() as Task);
 }
 
 export async function getAllLists(uid: string): Promise<TaskList[]> {
-  const json = await AsyncStorage.getItem(listsKey(uid));
-  if (!json) return [];
-  return JSON.parse(json) as TaskList[];
+  const snap = await getDocs(listsCol(uid));
+  return snap.docs.map((d) => d.data() as TaskList);
 }
 
-export async function saveAllTasks(uid: string, tasks: Task[]): Promise<void> {
-  await AsyncStorage.setItem(tasksKey(uid), JSON.stringify(tasks));
+export function subscribeToAllTasks(uid: string, cb: (tasks: Task[]) => void): () => void {
+  return onSnapshot(tasksCol(uid), (snap) => cb(snap.docs.map((d) => d.data() as Task)));
 }
 
-export async function saveAllLists(uid: string, lists: TaskList[]): Promise<void> {
-  await AsyncStorage.setItem(listsKey(uid), JSON.stringify(lists));
+export function subscribeToLists(uid: string, cb: (lists: TaskList[]) => void): () => void {
+  return onSnapshot(listsCol(uid), (snap) => cb(snap.docs.map((d) => d.data() as TaskList)));
 }
 
 export async function addTask(uid: string, task: Task): Promise<void> {
-  const tasks = await getAllTasks(uid);
-  tasks.push(task);
-  await saveAllTasks(uid, tasks);
+  await setDoc(taskDoc(uid, task.id), task);
 }
 
-export async function updateTask(uid: string, updated: Task): Promise<void> {
-  const tasks = await getAllTasks(uid);
-  const idx = tasks.findIndex((t) => t.id === updated.id);
-  if (idx !== -1) {
-    tasks[idx] = updated;
-    await saveAllTasks(uid, tasks);
-  }
+export async function updateTask(uid: string, task: Task): Promise<void> {
+  await setDoc(taskDoc(uid, task.id), task);
 }
 
 export async function deleteTask(uid: string, id: string): Promise<void> {
-  const tasks = await getAllTasks(uid);
-  await saveAllTasks(uid, tasks.filter((t) => t.id !== id));
+  await deleteDoc(taskDoc(uid, id));
 }
 
 export async function addList(uid: string, list: TaskList): Promise<void> {
-  const lists = await getAllLists(uid);
-  lists.push(list);
-  await saveAllLists(uid, lists);
+  await setDoc(listDoc(uid, list.id), list);
 }
 
-export async function updateList(uid: string, updated: TaskList): Promise<void> {
-  const lists = await getAllLists(uid);
-  const idx = lists.findIndex((l) => l.id === updated.id);
-  if (idx !== -1) {
-    lists[idx] = updated;
-    await saveAllLists(uid, lists);
-  }
+export async function updateList(uid: string, list: TaskList): Promise<void> {
+  await setDoc(listDoc(uid, list.id), list);
 }
 
 export async function deleteList(uid: string, id: string): Promise<void> {
-  const lists = await getAllLists(uid);
-  await saveAllLists(uid, lists.filter((l) => l.id !== id));
-  const tasks = await getAllTasks(uid);
-  await saveAllTasks(uid, tasks.filter((t) => t.listId !== id));
+  await deleteDoc(listDoc(uid, id));
+  // Delete all tasks belonging to this list
+  const q = query(tasksCol(uid), where('listId', '==', id));
+  const snap = await getDocs(q);
+  if (snap.empty) return;
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+}
+
+// Kept for internal use where a full overwrite is needed
+export async function saveAllTasks(uid: string, tasks: Task[]): Promise<void> {
+  const batch = writeBatch(db);
+  tasks.forEach((t) => batch.set(taskDoc(uid, t.id), t));
+  await batch.commit();
+}
+
+export async function saveAllLists(uid: string, lists: TaskList[]): Promise<void> {
+  const batch = writeBatch(db);
+  lists.forEach((l) => batch.set(listDoc(uid, l.id), l));
+  await batch.commit();
 }

@@ -1,125 +1,132 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc, writeBatch, onSnapshot,
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { FishEgg, OwnedFish, FishSpecies, FISH_SPECIES, rollFishSpecies, computeUnlockedBiomes, BIOME_SPECIES, BiomeKey } from '../models/aquariumModels';
 import { generateId } from '../models/taskModels';
 
-const eggsKey      = (uid: string) => `aquarium_eggs_${uid}`;
-const fishKey      = (uid: string) => `aquarium_fish_${uid}`;
-const starterKey   = (uid: string) => `aquarium_starter_claimed_${uid}`;
-const lastLoginKey = (uid: string) => `last_login_date_${uid}`;
+// ── Firestore paths ───────────────────────────────────
+const eggsCol  = (uid: string) => collection(db, 'users', uid, 'eggs');
+const fishCol  = (uid: string) => collection(db, 'users', uid, 'fish');
+const metaDoc  = (uid: string) => doc(db, 'users', uid, 'meta');
+const eggDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'eggs', id);
+const fishDoc  = (uid: string, id: string) => doc(db, 'users', uid, 'fish', id);
 
-const INCUBATION_MS   = 24 * 60 * 60 * 1000; // 24 h until ready to hatch
-const HATCH_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 h window to hatch before expiry
-
-// ── internal ─────────────────────────────────────────
+const INCUBATION_MS   = 24 * 60 * 60 * 1000;
+const HATCH_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function buildEgg(speciesHint?: string, incubationMs = INCUBATION_MS): FishEgg {
-  const now       = Date.now();
-  const readyAt   = new Date(now + incubationMs).toISOString();
-  const expiresAt = new Date(now + incubationMs + HATCH_WINDOW_MS).toISOString();
+  const now = Date.now();
   return {
     id: generateId(),
-    earnedAt: new Date(now).toISOString(),
-    readyAt,
-    expiresAt,
+    earnedAt:  new Date(now).toISOString(),
+    readyAt:   new Date(now + incubationMs).toISOString(),
+    expiresAt: new Date(now + incubationMs + HATCH_WINDOW_MS).toISOString(),
     ...(speciesHint ? { speciesHint } : {}),
   };
 }
 
-/** Migrate legacy eggs missing readyAt/expiresAt, then drop any that have expired. */
 async function loadAndCleanEggs(uid: string): Promise<FishEgg[]> {
-  const json = await AsyncStorage.getItem(eggsKey(uid));
-  if (!json) return [];
-
-  const raw: any[] = JSON.parse(json);
+  const snap = await getDocs(eggsCol(uid));
   const now = Date.now();
+  const batch = writeBatch(db);
+  let deletedAny = false;
 
-  const migrated: FishEgg[] = raw.map((egg) => {
-    if (egg.readyAt) return egg as FishEgg;
-    const earned = new Date(egg.earnedAt).getTime();
-    return {
-      ...egg,
-      readyAt:   new Date(earned + INCUBATION_MS).toISOString(),
-      expiresAt: new Date(earned + INCUBATION_MS + HATCH_WINDOW_MS).toISOString(),
-    } as FishEgg;
-  });
-
-  const valid = migrated.filter((e) => new Date(e.expiresAt).getTime() > now);
-
-  if (valid.length !== raw.length) {
-    await AsyncStorage.setItem(eggsKey(uid), JSON.stringify(valid));
+  const valid: FishEgg[] = [];
+  for (const d of snap.docs) {
+    const egg = d.data() as FishEgg;
+    // Migrate legacy eggs missing readyAt
+    if (!egg.readyAt) {
+      const earned = new Date(egg.earnedAt).getTime();
+      egg.readyAt   = new Date(earned + INCUBATION_MS).toISOString();
+      egg.expiresAt = new Date(earned + INCUBATION_MS + HATCH_WINDOW_MS).toISOString();
+      batch.set(d.ref, egg);
+    }
+    if (new Date(egg.expiresAt).getTime() > now) {
+      valid.push(egg);
+    } else {
+      batch.delete(d.ref);
+      deletedAny = true;
+    }
+  }
+  if (deletedAny || snap.docs.some((d) => !(d.data() as FishEgg).readyAt)) {
+    await batch.commit();
   }
   return valid;
 }
 
-// ── public API ───────────────────────────────────────
+// ── Public API ────────────────────────────────────────
 
 export async function getEggs(uid: string): Promise<FishEgg[]> {
   return loadAndCleanEggs(uid);
 }
 
 export async function awardEgg(uid: string, speciesHint?: string): Promise<FishEgg> {
-  const egg  = buildEgg(speciesHint);
-  const eggs = await loadAndCleanEggs(uid);
-  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify([...eggs, egg]));
+  const egg = buildEgg(speciesHint);
+  await setDoc(eggDoc(uid, egg.id), egg);
   return egg;
 }
 
-/** Awards the free otter egg on first app open. Ready in 5 seconds. Returns null if already claimed. */
 export async function claimStarterEgg(uid: string): Promise<FishEgg | null> {
-  const already = await AsyncStorage.getItem(starterKey(uid));
-  if (already) return null;
-  await AsyncStorage.setItem(starterKey(uid), 'true');
-  const egg  = buildEgg('otter', 5_000); // 5-second incubation
-  const eggs = await loadAndCleanEggs(uid);
-  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify([...eggs, egg]));
+  const meta = await getDoc(metaDoc(uid));
+  if (meta.exists() && meta.data().starterClaimed) return null;
+  // Record account creation date so the daily egg buffer can use it
+  await setDoc(metaDoc(uid), { starterClaimed: true, accountCreatedDate: getEasternDateString() }, { merge: true });
+  const egg = buildEgg('otter', 5_000);
+  await setDoc(eggDoc(uid, egg.id), egg);
   return egg;
 }
 
-/** Today's date string in Eastern Time — changes at 12:00 AM ET. */
 function getEasternDateString(): string {
   return new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
 }
 
-/** Milliseconds from now until the next 12:00 AM Eastern Time (handles EST/EDT automatically). */
 function getMsUntilEasternMidnight(): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    hour: 'numeric', minute: 'numeric', second: 'numeric',
-    hour12: false,
+    hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false,
   }).formatToParts(new Date());
-  const get = (t: string) => parseInt(parts.find(p => p.type === t)!.value);
+  const get = (t: string) => parseInt(parts.find((p) => p.type === t)!.value);
   const elapsedMs = get('hour') * 3_600_000 + get('minute') * 60_000 + get('second') * 1_000;
   return 86_400_000 - elapsedMs;
 }
 
-/** Awards one egg per calendar day (ET) on login. Returns null if already awarded today.
- *  The egg incubates until the next 12:00 AM ET so it's always ready when the daily reward resets. */
 export async function checkDailyLoginEgg(uid: string): Promise<FishEgg | null> {
   const today = getEasternDateString();
-  const last  = await AsyncStorage.getItem(lastLoginKey(uid));
-  if (last === today) return null;
-  await AsyncStorage.setItem(lastLoginKey(uid), today);
+  const meta = await getDoc(metaDoc(uid));
+  const data = meta.exists() ? meta.data() : {};
 
-  const egg  = buildEgg(undefined, getMsUntilEasternMidnight());
-  const eggs = await loadAndCleanEggs(uid);
-  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify([...eggs, egg]));
+  // No egg on the day the account was created — reward starts the following day
+  if (data.accountCreatedDate === today) return null;
+
+  if (data.lastLoginDate === today) return null;
+  await setDoc(metaDoc(uid), { lastLoginDate: today }, { merge: true });
+  const egg = buildEgg(undefined, getMsUntilEasternMidnight());
+  await setDoc(eggDoc(uid, egg.id), egg);
   return egg;
 }
 
 export async function getOwnedFish(uid: string): Promise<OwnedFish[]> {
-  const json = await AsyncStorage.getItem(fishKey(uid));
-  return json ? JSON.parse(json) : [];
+  const snap = await getDocs(fishCol(uid));
+  return snap.docs.map((d) => d.data() as OwnedFish);
+}
+
+export function subscribeToEggs(uid: string, cb: (eggs: FishEgg[]) => void): () => void {
+  return onSnapshot(eggsCol(uid), (snap) => cb(snap.docs.map((d) => d.data() as FishEgg)));
+}
+
+export function subscribeToFish(uid: string, cb: (fish: OwnedFish[]) => void): () => void {
+  return onSnapshot(fishCol(uid), (snap) => cb(snap.docs.map((d) => d.data() as OwnedFish)));
 }
 
 export async function hatchEgg(uid: string, eggId: string): Promise<{ fish: OwnedFish; species: FishSpecies }> {
   const eggs = await loadAndCleanEggs(uid);
-  const egg  = eggs.find((e) => e.id === eggId);
+  const egg = eggs.find((e) => e.id === eggId);
   if (!egg) throw new Error('Egg not found or expired');
 
-  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify(eggs.filter((e) => e.id !== eggId)));
+  await deleteDoc(eggDoc(uid, eggId));
 
   const currentOwned = await getOwnedFish(uid);
-
   const hinted = egg.speciesHint ? FISH_SPECIES.find((s) => s.id === egg.speciesHint) : undefined;
 
   let species: FishSpecies;
@@ -131,34 +138,40 @@ export async function hatchEgg(uid: string, eggId: string): Promise<{ fish: Owne
     for (const biomeKey of unlockedBiomes as Set<BiomeKey>) {
       for (const id of BIOME_SPECIES[biomeKey]) allowedIds.add(id);
     }
-    allowedIds.delete('otter'); // never rollable
+    allowedIds.delete('otter');
     const ownedSpeciesIds = new Set(currentOwned.map((f) => f.speciesId));
     species = rollFishSpecies(allowedIds, ownedSpeciesIds);
   }
 
   const fish: OwnedFish = { id: generateId(), speciesId: species.id, hatchedAt: new Date().toISOString() };
-  await AsyncStorage.setItem(fishKey(uid), JSON.stringify([...currentOwned, fish]));
-
+  await setDoc(fishDoc(uid, fish.id), fish);
   return { fish, species };
 }
 
 export async function skipEggTimer(uid: string, eggId: string): Promise<void> {
   const eggs = await loadAndCleanEggs(uid);
-  const now  = new Date().toISOString();
-  const updated = eggs.map((e) => e.id === eggId ? { ...e, readyAt: now } : e);
-  await AsyncStorage.setItem(eggsKey(uid), JSON.stringify(updated));
+  const egg = eggs.find((e) => e.id === eggId);
+  if (!egg) return;
+  await setDoc(eggDoc(uid, eggId), { ...egg, readyAt: new Date().toISOString() });
 }
 
 export async function clearOwnedFish(uid: string): Promise<void> {
-  await AsyncStorage.setItem(fishKey(uid), JSON.stringify([]));
+  const snap = await getDocs(fishCol(uid));
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }
 
 export async function loadSamplePack(uid: string): Promise<void> {
   const now = new Date().toISOString();
   const owned = await getOwnedFish(uid);
   const alreadyOwned = new Set(owned.map((f) => f.speciesId));
-  const newFish: OwnedFish[] = FISH_SPECIES
+  const batch = writeBatch(db);
+  FISH_SPECIES
     .filter((s) => !alreadyOwned.has(s.id))
-    .map((s) => ({ id: generateId(), speciesId: s.id, hatchedAt: now }));
-  await AsyncStorage.setItem(fishKey(uid), JSON.stringify([...owned, ...newFish]));
+    .forEach((s) => {
+      const fish: OwnedFish = { id: generateId(), speciesId: s.id, hatchedAt: now };
+      batch.set(fishDoc(uid, fish.id), fish);
+    });
+  await batch.commit();
 }

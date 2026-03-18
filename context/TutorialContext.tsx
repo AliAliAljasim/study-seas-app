@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
 
 export type TutorialStep =
   | 'dashboard_hero'
@@ -24,21 +25,13 @@ interface TutorialCtx {
   skip: () => void;
   dismiss: () => void;
   initForUser: (uid: string) => Promise<void>;
-  isActive: boolean;   // step is not null and not 'done'
-  isVisible: boolean;  // isActive && !dismissed
+  isActive: boolean;
+  isVisible: boolean;
 }
 
 const STEPS: TutorialStep[] = [
-  'dashboard_hero',
-  'aquarium_biome',
-  'aquarium_empty',
-  'timer_prompt',
-  'egg_tab',
-  'egg_hatch',
-  'tank_return',
-  'bestiary_view',
-  'dashboard_features',
-  'done',
+  'dashboard_hero', 'aquarium_biome', 'aquarium_empty', 'timer_prompt',
+  'egg_tab', 'egg_hatch', 'tank_return', 'bestiary_view', 'dashboard_features', 'done',
 ];
 
 const TutorialContext = createContext<TutorialCtx>({
@@ -46,6 +39,13 @@ const TutorialContext = createContext<TutorialCtx>({
   setSpotlight: () => {}, advance: () => {}, skip: () => {}, dismiss: () => {},
   initForUser: async () => {}, isActive: false, isVisible: false,
 });
+
+const metaDoc = (uid: string) => doc(db, 'users', uid, 'meta');
+
+async function saveTutorialStep(uid: string, step: TutorialStep) {
+  if (!uid) return;
+  await setDoc(metaDoc(uid), { tutorialStep: step }, { merge: true });
+}
 
 export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const [step, setStep] = useState<TutorialStep | null>(null);
@@ -55,18 +55,13 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
   const setSpotlight = useCallback((r: SpotRect | null) => setSpotlightState(r), []);
 
-  const saveStep = (s: TutorialStep) => {
-    if (uidRef.current) AsyncStorage.setItem(`tutorial_${uidRef.current}`, s);
-  };
-
   const advance = useCallback(() => {
     setSpotlightState(null);
     setDismissed(false);
-    setStep(prev => {
+    setStep((prev) => {
       if (!prev) return null;
-      const idx = STEPS.indexOf(prev);
-      const next = STEPS[Math.min(idx + 1, STEPS.length - 1)];
-      saveStep(next);
+      const next = STEPS[Math.min(STEPS.indexOf(prev) + 1, STEPS.length - 1)];
+      saveTutorialStep(uidRef.current, next);
       return next;
     });
   }, []);
@@ -75,20 +70,20 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     setSpotlightState(null);
     setDismissed(false);
     setStep('done');
-    if (uidRef.current) AsyncStorage.setItem(`tutorial_${uidRef.current}`, 'done');
+    saveTutorialStep(uidRef.current, 'done');
   }, []);
 
   const dismiss = useCallback(() => setDismissed(true), []);
 
-  // Reset dismissed whenever step changes
   useEffect(() => { setDismissed(false); }, [step]);
 
   const initForUser = useCallback(async (uid: string) => {
     uidRef.current = uid;
-    const saved = await AsyncStorage.getItem(`tutorial_${uid}`);
+    const snap = await getDoc(metaDoc(uid));
+    const saved = snap.exists() ? snap.data().tutorialStep : null;
     if (!saved) {
       setStep('dashboard_hero');
-      AsyncStorage.setItem(`tutorial_${uid}`, 'dashboard_hero');
+      saveTutorialStep(uid, 'dashboard_hero');
     } else {
       setStep(saved as TutorialStep);
     }

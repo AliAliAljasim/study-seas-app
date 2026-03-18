@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, Animated, Easing, Alert, Modal, useWindowDimensions,
+  Animated, Easing, Alert, Modal, useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Rect, Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -318,7 +319,7 @@ export default function HomePage() {
             <View style={s.weeklyGrid}>
               <WeeklyStat icon="⏱" value={`${weeklyStats.hours}h`}  label="studied"    color="#2E86AB" />
               <WeeklyStat icon="✅" value={String(weeklyStats.tasksCompleted)} label="tasks done" color="#52B788" />
-              <WeeklyStat icon="🔥" value={`${weeklyStats.streak}d`} label="streak"     color="#F4845F" />
+              <WeeklyStat icon="🔥" value={`${weeklyStats.streak}`} label="streak"     color="#F4845F" />
               {weeklyStats.cgpa !== null
                 ? <WeeklyStat icon="📊" value={weeklyStats.cgpa.toFixed(2)} label="GPA" color="#9381FF" />
                 : <WeeklyStat icon="📚" value="—"   label="GPA"        color="#9381FF" />}

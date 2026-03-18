@@ -4,22 +4,27 @@ import { ActivityIndicator, View } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { ThemeProvider } from '../context/ThemeContext';
 import { TutorialProvider, useTutorial } from '../context/TutorialContext';
+import { requestPermissions } from '../services/notificationService';
 
 function RootLayoutNav() {
-  const { user, loading } = useAuth();
+  const { user, emailVerified, loading } = useAuth();
   const { initForUser } = useTutorial();
   const segments = useSegments();
   const router = useRouter();
 
+  useEffect(() => { requestPermissions(); }, []);
+
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === '(auth)';
-    if (!user && !inAuth) {
-      router.replace('/(auth)/sign-in');
-    } else if (user && inAuth) {
+    if (!user) {
+      if (!inAuth) router.replace('/(auth)/sign-in');
+    } else if (!emailVerified) {
+      router.replace('/(auth)/verify-email');
+    } else if (inAuth) {
       router.replace('/(app)');
     }
-  }, [user, loading, segments]);
+  }, [user, emailVerified, loading, segments]);
 
   useEffect(() => {
     if (user?.uid) initForUser(user.uid);

@@ -10,6 +10,10 @@ web-build/
 *.orig.*
 .env
 .env.local
+# Firebase Admin SDK keys — never commit these
+*-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
 sample_pack_extracted/
 sample_pack.zip
 full_pack_extracted/

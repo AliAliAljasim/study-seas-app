@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, TextInput, Alert, Keyboard, useWindowDimensions,
+  TextInput, Alert, Keyboard, useWindowDimensions,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Polyline, Circle as SvgCircle, Text as SvgText, Line as SvgLine, G } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { getTheme } from '../../constants/colors';
 import { generateId } from '../../models/taskModels';
+import { db } from '../../services/firebase';
 
 // ── Types ──────────────────────────────────────────────
 
@@ -36,8 +40,7 @@ interface PastSemester {
   credits: number;
 }
 
-const COURSES_KEY = 'grades_courses';
-const PAST_KEY = 'grades_past_semesters';
+const gradesDoc = (uid: string) => doc(db, 'users', uid, 'data', 'grades');
 
 // ── Grade helpers ──────────────────────────────────────
 
@@ -150,6 +153,8 @@ function GPATrendChart({ data, isDark }: {
 // ── Main Component ─────────────────────────────────────
 
 export default function GradesPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const [tab, setTab] = useState<Tab>('courses');
@@ -184,18 +189,23 @@ export default function GradesPage() {
 
   // ── Persistence ──
   useEffect(() => {
-    AsyncStorage.getItem(COURSES_KEY).then((v) => v && setCourses(JSON.parse(v)));
-    AsyncStorage.getItem(PAST_KEY).then((v) => v && setPastSemesters(JSON.parse(v)));
-  }, []);
+    if (!uid) return;
+    getDoc(gradesDoc(uid)).then((snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.courses) setCourses(data.courses);
+      if (data.pastSemesters) setPastSemesters(data.pastSemesters);
+    });
+  }, [uid]);
 
   const saveCourses = (updated: Course[]) => {
     setCourses(updated);
-    AsyncStorage.setItem(COURSES_KEY, JSON.stringify(updated));
+    if (uid) setDoc(gradesDoc(uid), { courses: updated }, { merge: true });
   };
 
   const savePast = (updated: PastSemester[]) => {
     setPastSemesters(updated);
-    AsyncStorage.setItem(PAST_KEY, JSON.stringify(updated));
+    if (uid) setDoc(gradesDoc(uid), { pastSemesters: updated }, { merge: true });
   };
 
   // ── Course actions ──
@@ -300,6 +310,7 @@ export default function GradesPage() {
   ];
 
   return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Tab bar */}
       <View style={[styles.tabRow, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
@@ -318,7 +329,7 @@ export default function GradesPage() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
 
         {/* ══ COURSES TAB ══ */}
         {tab === 'courses' && (
@@ -759,6 +770,7 @@ export default function GradesPage() {
 
       </ScrollView>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
