@@ -7,7 +7,7 @@ import { generateId } from '../models/taskModels';
 // ── Firestore paths ───────────────────────────────────
 const sessionsCol   = (uid: string) => collection(db, 'users', uid, 'sessions');
 const completedCol  = (uid: string) => collection(db, 'users', uid, 'completedLog');
-const metaDoc       = (uid: string) => doc(db, 'users', uid, 'meta');
+const metaDoc       = (uid: string) => doc(db, 'users', uid, 'data', 'meta');
 
 interface StudySession {
   id: string;
@@ -89,10 +89,11 @@ function _courseGrade(c: _Course): number | null {
   return c.assignments.reduce((s, a) => s + (a.score / a.maxScore) * 100 * a.weight, 0) / tw;
 }
 function _pctToGPA(pct: number): number {
-  if (pct >= 93) return 4.0; if (pct >= 90) return 3.7; if (pct >= 87) return 3.3;
-  if (pct >= 83) return 3.0; if (pct >= 80) return 2.7; if (pct >= 77) return 2.3;
-  if (pct >= 73) return 2.0; if (pct >= 70) return 1.7; if (pct >= 67) return 1.3;
-  if (pct >= 60) return 1.0; return 0.0;
+  if (pct >= 90) return 4.33; if (pct >= 85) return 4.00; if (pct >= 80) return 3.67;
+  if (pct >= 77) return 3.33; if (pct >= 73) return 3.00; if (pct >= 70) return 2.67;
+  if (pct >= 67) return 2.33; if (pct >= 63) return 2.00; if (pct >= 60) return 1.67;
+  if (pct >= 57) return 1.33; if (pct >= 53) return 1.00; if (pct >= 50) return 0.67;
+  return 0.0;
 }
 
 async function computeCGPA(uid: string): Promise<number | null> {

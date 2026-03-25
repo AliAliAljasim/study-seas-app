@@ -40,7 +40,7 @@ const TutorialContext = createContext<TutorialCtx>({
   initForUser: async () => {}, isActive: false, isVisible: false,
 });
 
-const metaDoc = (uid: string) => doc(db, 'users', uid, 'meta');
+const metaDoc = (uid: string) => doc(db, 'users', uid, 'data', 'meta');
 
 async function saveTutorialStep(uid: string, step: TutorialStep) {
   if (!uid) return;

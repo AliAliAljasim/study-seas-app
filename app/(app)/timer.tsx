@@ -10,6 +10,7 @@ import { db } from '../../services/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { useLayout, modalOverlay, modalCard } from '../../constants/layout';
 import { useAuth } from '../../context/AuthContext';
 import { awardEgg } from '../../services/aquariumService';
 import { useTutorial } from '../../context/TutorialContext';
@@ -60,6 +61,7 @@ export default function TimerPage() {
   const { user } = useAuth();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
+  const { isTablet } = useLayout();
   const { step, setSpotlight, advance } = useTutorial();
 
   const [prefs, setPrefs] = useState<TimerPrefs>(DEFAULT_PREFS);
@@ -271,6 +273,7 @@ export default function TimerPage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[{ flex: 1 }, isTablet && { maxWidth: 680, width: '100%', alignSelf: 'center' }]}>
 
       {/* ── Top bar ── */}
       <View style={styles.topBar}>
@@ -409,7 +412,7 @@ export default function TimerPage() {
       {/* ════ Sheets ════════════════════════════════════════ */}
 
       {/* Technique picker */}
-      <Sheet visible={showTechnique} onClose={() => setShowTechnique(false)} title="Technique" theme={theme}>
+      <Sheet visible={showTechnique} onClose={() => setShowTechnique(false)} title="Technique" theme={theme} isTablet={isTablet}>
         {(Object.keys(techniques) as Technique[]).map((t) => (
           <TouchableOpacity
             key={t}
@@ -426,7 +429,7 @@ export default function TimerPage() {
       </Sheet>
 
       {/* Task picker */}
-      <Sheet visible={showTaskPicker} onClose={() => setShowTaskPicker(false)} title="Select Task" theme={theme}>
+      <Sheet visible={showTaskPicker} onClose={() => setShowTaskPicker(false)} title="Select Task" theme={theme} isTablet={isTablet}>
         {pendingTasks.length === 0 ? (
           <View style={styles.emptySheet}>
             <Text style={{ fontSize: 32 }}>✅</Text>
@@ -465,12 +468,12 @@ export default function TimerPage() {
       </Sheet>
 
       {/* Analytics */}
-      <Sheet visible={showAnalytics} onClose={() => setShowAnalytics(false)} title="Focus This Week" theme={theme}>
+      <Sheet visible={showAnalytics} onClose={() => setShowAnalytics(false)} title="Focus This Week" theme={theme} isTablet={isTablet}>
         <FocusBarChart data={dailyHours} color="#3DBDAA" isDark={isDark} />
       </Sheet>
 
       {/* History */}
-      <Sheet visible={showHistory} onClose={() => setShowHistory(false)} title="Session History" theme={theme}>
+      <Sheet visible={showHistory} onClose={() => setShowHistory(false)} title="Session History" theme={theme} isTablet={isTablet}>
         {history.length === 0 ? (
           <View style={styles.emptySheet}>
             <Text style={{ fontSize: 32 }}>🎯</Text>
@@ -490,7 +493,7 @@ export default function TimerPage() {
       </Sheet>
 
       {/* Settings */}
-      <Sheet visible={showSettings} onClose={() => setShowSettings(false)} title="Timer Settings" theme={theme} scrollable>
+      <Sheet visible={showSettings} onClose={() => setShowSettings(false)} title="Timer Settings" theme={theme} scrollable isTablet={isTablet}>
         <SettingsSection title="Pomodoro" isDark={isDark}>
           <PrefRow label="Focus" value={prefs.pomodoroFocus} onMinus={() => adjustPref('pomodoroFocus', -5)} onPlus={() => adjustPref('pomodoroFocus', 5)} theme={theme} />
           <PrefRow label="Short Break" value={prefs.pomodoroShort} onMinus={() => adjustPref('pomodoroShort', -1)} onPlus={() => adjustPref('pomodoroShort', 1)} theme={theme} />
@@ -506,19 +509,21 @@ export default function TimerPage() {
         </SettingsSection>
       </Sheet>
 
+      </View>
     </SafeAreaView>
   );
 }
 
 // ── Reusable Sheet ─────────────────────────────────────────
 
-function Sheet({ visible, onClose, title, theme, children, scrollable }: {
+function Sheet({ visible, onClose, title, theme, children, scrollable, isTablet }: {
   visible: boolean; onClose: () => void; title: string;
-  theme: any; children: React.ReactNode; scrollable?: boolean;
+  theme: any; children: React.ReactNode; scrollable?: boolean; isTablet?: boolean;
 }) {
+  const cardStyle = modalCard(!!isTablet, theme.surface, { gap: 0 });
   const inner = (
-    <View style={[styles.sheetCard, { backgroundColor: theme.surface }]}>
-      <View style={styles.sheetHandle} />
+    <View style={cardStyle}>
+      {!isTablet && <View style={styles.sheetHandle} />}
       <View style={styles.sheetHeader}>
         <Text style={[styles.sheetTitle, { color: theme.text }]}>{title}</Text>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -532,8 +537,8 @@ function Sheet({ visible, onClose, title, theme, children, scrollable }: {
   );
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={{ width: '100%' }}>
+      <TouchableOpacity style={modalOverlay(!!isTablet)} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={isTablet ? {} : { width: '100%' }}>
           {inner}
         </TouchableOpacity>
       </TouchableOpacity>

@@ -14,7 +14,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useTutorial } from '../../context/TutorialContext';
-import { getOwnedFish, hatchEgg, claimStarterEgg, clearOwnedFish, subscribeToEggs, subscribeToFish } from '../../services/aquariumService';
+import { getOwnedFish, hatchEgg, claimStarterEgg, subscribeToEggs, subscribeToFish } from '../../services/aquariumService';
 import {
   FishEgg, OwnedFish, FishSpecies,
   FISH_SPECIES, RARITY_COLORS, RARITY_LABELS, FishRarity,
@@ -1652,13 +1652,13 @@ export default function AquariumPage() {
       }, 500);
     } else if (step === 'tank_return') {
       setTimeout(() => {
-        tabBarRef.current?.measureInWindow((x, y, w, h) => {
+        tankTabRef.current?.measureInWindow((x, y, w, h) => {
           if (w > 0) setSpotlight({ x, y, w, h });
         });
       }, 300);
     } else if (step === 'bestiary_view') {
       setTimeout(() => {
-        tabBarRef.current?.measureInWindow((x, y, w, h) => {
+        bestiaryTabRef.current?.measureInWindow((x, y, w, h) => {
           if (w > 0) setSpotlight({ x, y, w, h });
         });
       }, 300);
@@ -1718,9 +1718,12 @@ export default function AquariumPage() {
       <View ref={tabBarRef} collapsable={false} style={[styles.tabBar, { backgroundColor: theme.surface }]}>
         {(['tank', 'eggs', 'bestiary'] as Tab[]).map((t) => {
           const active = tab === t;
+          const ref = t === 'tank' ? tankTabRef : t === 'bestiary' ? bestiaryTabRef : undefined;
           return (
             <TouchableOpacity
               key={t}
+              ref={ref}
+              collapsable={false}
               style={[styles.tabBtn, active && { backgroundColor: '#3DBDAA22' }]}
               onPress={() => handleTabPress(t)}
             >
@@ -1924,20 +1927,6 @@ export default function AquariumPage() {
                     / {FISH_SPECIES.length} discovered
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => Alert.alert(
-                    'Clear Bestiary',
-                    'This will remove all your fish. Your eggs will remain. Are you sure?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Clear', style: 'destructive', onPress: () => clearOwnedFish(uid).then(load) },
-                    ],
-                  )}
-                  style={[styles.clearBestiaryBtn, { backgroundColor: '#E76F5122' }]}
-                >
-                  <Ionicons name="trash-outline" size={14} color="#E76F51" />
-                  <Text style={{ fontSize: 12, color: '#E76F51', fontWeight: '600' }}>Clear</Text>
-                </TouchableOpacity>
               </View>
               <View style={[styles.progressBg, { backgroundColor: theme.background }]}>
                 <View style={[styles.progressFill, {
@@ -2160,7 +2149,6 @@ const styles = StyleSheet.create({
 
   // Bestiary
   bestiaryHeader:  { padding: 20, borderRadius: 22, gap: 12 },
-  clearBestiaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   bestiaryBigNum:  { fontSize: 46, fontWeight: '900', letterSpacing: -1 },
   bestiaryTotal:   { fontSize: 16, fontWeight: '500' },
   progressBg:      { height: 8, borderRadius: 4, overflow: 'hidden' },

@@ -28,7 +28,14 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (didAutoSend.current) return;
     didAutoSend.current = true;
-    sendVerification().then(() => setCooldown(60)).catch(() => {});
+    sendVerification()
+      .then(() => setCooldown(60))
+      .catch((e) => {
+        // too-many-requests means an email was already sent recently — don't block resend
+        if (e?.code !== 'auth/too-many-requests') {
+          console.error('[VerifyEmail] auto-send failed:', e);
+        }
+      });
   }, []);
 
   // Cooldown timer for resend button
@@ -78,7 +85,7 @@ export default function VerifyEmailPage() {
       </Text>
       <Text style={styles.email}>{user?.email}</Text>
       <Text style={styles.hint}>
-        Open the link in your email, then come back and tap the button below.
+        Open the link in your email, then come back and tap the button below.{'\n'}Can't find it? Check your spam folder.
       </Text>
 
       <TouchableOpacity style={styles.primaryBtn} onPress={handleCheckVerified} disabled={checking}>

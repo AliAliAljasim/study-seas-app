@@ -9,6 +9,7 @@ import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { useLayout, contentContainer, modalOverlay, modalCard } from '../../constants/layout';
 import { useAuth } from '../../context/AuthContext';
 import { generateId } from '../../models/taskModels';
 import { subscribeToEvents, upsertEvent, deleteEvent, EventCategory, CalEvent } from '../../services/calendarService';
@@ -110,6 +111,7 @@ export default function CalendarPage() {
   const theme = getTheme(isDark);
   const { user } = useAuth();
   const uid = user?.uid ?? 'guest';
+  const { isTablet } = useLayout();
 
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -239,7 +241,7 @@ export default function CalendarPage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, contentContainer(isTablet)]}>
         {/* Calendar */}
         <View style={[styles.calendarCard, { backgroundColor: theme.surface }]}>
           <Calendar
@@ -296,8 +298,8 @@ export default function CalendarPage() {
       {/* Add/Edit Modal */}
       <Modal visible={modal} transparent animationType="slide">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <Pressable style={styles.modalOverlay} onPress={Keyboard.dismiss}>
-            <Pressable style={[styles.modalCard, { backgroundColor: isDark ? '#152234' : '#FFF' }]}>
+          <Pressable style={modalOverlay(isTablet)} onPress={Keyboard.dismiss}>
+            <Pressable style={modalCard(isTablet, isDark ? '#152234' : '#FFF')}>
               {/* Handle */}
               <View style={styles.sheetHandle} />
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert, useWindowDimensions,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 export default function SignInPage() {
   const { signIn } = useAuth();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -68,7 +70,7 @@ export default function SignInPage() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scroll, isTablet && { paddingHorizontal: Math.max(24, (width - 480) / 2) }]} keyboardShouldPersistTaps="handled">
 
         {/* Header */}
         <View style={styles.header}>

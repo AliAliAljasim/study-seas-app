@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { useLayout, contentContainer, modalOverlay, modalCard } from '../../constants/layout';
 import { Task, TaskList, TaskPriority, Subtask, Note, RepeatInterval, generateId, priorityColor } from '../../models/taskModels';
 import * as taskService from '../../services/taskService';
 import { logTaskCompletion } from '../../services/studyStatsService';
@@ -34,6 +35,7 @@ export default function TodoPage() {
   const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
+  const { isTablet } = useLayout();
 
   const [view, setView] = useState<View_>('lists');
   const [lists, setLists] = useState<TaskList[]>([]);
@@ -324,7 +326,7 @@ export default function TodoPage() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={[styles.scroll, contentContainer(isTablet)]}>
           {lists.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={{ fontSize: 48 }}>📝</Text>
@@ -361,8 +363,8 @@ export default function TodoPage() {
 
         <Modal visible={listModal} transparent animationType="slide">
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <Pressable style={styles.modalOverlay} onPress={Keyboard.dismiss}>
-              <Pressable style={[styles.modalCard, { backgroundColor: isDark ? '#2D2D2D' : '#FFF' }]}>
+            <Pressable style={modalOverlay(isTablet)} onPress={Keyboard.dismiss}>
+              <Pressable style={modalCard(isTablet, isDark ? '#2D2D2D' : '#FFF')}>
                 <Text style={[styles.modalTitle, { color: isDark ? '#FFF' : '#000' }]}>New List</Text>
                 <TextInput
                   style={[styles.input, { color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#444' : '#DDD' }]}

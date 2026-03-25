@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Alert, Keyboard, useWindowDimensions,
-  KeyboardAvoidingView, Platform,
+  TextInput, Alert, Keyboard,
+  KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Polyline, Circle as SvgCircle, Text as SvgText, Line as SvgLine, G } from 'react-native-svg';
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { getTheme } from '../../constants/colors';
+import { useLayout, contentContainer } from '../../constants/layout';
 import { generateId } from '../../models/taskModels';
 import { db } from '../../services/firebase';
 
@@ -44,17 +45,20 @@ const gradesDoc = (uid: string) => doc(db, 'users', uid, 'data', 'grades');
 
 // ── Grade helpers ──────────────────────────────────────
 
+// TMU 4.33 GPA scale
 function letterGrade(pct: number): string {
-  if (pct >= 93) return 'A';
-  if (pct >= 90) return 'A-';
-  if (pct >= 87) return 'B+';
-  if (pct >= 83) return 'B';
-  if (pct >= 80) return 'B-';
-  if (pct >= 77) return 'C+';
-  if (pct >= 73) return 'C';
-  if (pct >= 70) return 'C-';
-  if (pct >= 67) return 'D+';
-  if (pct >= 60) return 'D';
+  if (pct >= 90) return 'A+';
+  if (pct >= 85) return 'A';
+  if (pct >= 80) return 'A-';
+  if (pct >= 77) return 'B+';
+  if (pct >= 73) return 'B';
+  if (pct >= 70) return 'B-';
+  if (pct >= 67) return 'C+';
+  if (pct >= 63) return 'C';
+  if (pct >= 60) return 'C-';
+  if (pct >= 57) return 'D+';
+  if (pct >= 53) return 'D';
+  if (pct >= 50) return 'D-';
   return 'F';
 }
 
@@ -63,36 +67,39 @@ function gradeColor(pct: number): string {
   if (pct >= 80) return '#8BC34A';
   if (pct >= 70) return '#FFD700';
   if (pct >= 60) return '#FF9800';
+  if (pct >= 50) return '#FF5722';
   return '#F44336';
 }
 
 function gpaColor(gpa: number): string {
-  if (gpa >= 3.5) return '#4CAF50';
+  if (gpa >= 3.7) return '#4CAF50';
   if (gpa >= 3.0) return '#8BC34A';
-  if (gpa >= 2.5) return '#FFD700';
-  if (gpa >= 2.0) return '#FF9800';
+  if (gpa >= 2.3) return '#FFD700';
+  if (gpa >= 1.7) return '#FF9800';
   return '#F44336';
 }
 
 function pctToGPA(pct: number): number {
-  if (pct >= 93) return 4.0;
-  if (pct >= 90) return 3.7;
-  if (pct >= 87) return 3.3;
-  if (pct >= 83) return 3.0;
-  if (pct >= 80) return 2.7;
-  if (pct >= 77) return 2.3;
-  if (pct >= 73) return 2.0;
-  if (pct >= 70) return 1.7;
-  if (pct >= 67) return 1.3;
-  if (pct >= 60) return 1.0;
+  if (pct >= 90) return 4.33;
+  if (pct >= 85) return 4.00;
+  if (pct >= 80) return 3.67;
+  if (pct >= 77) return 3.33;
+  if (pct >= 73) return 3.00;
+  if (pct >= 70) return 2.67;
+  if (pct >= 67) return 2.33;
+  if (pct >= 63) return 2.00;
+  if (pct >= 60) return 1.67;
+  if (pct >= 57) return 1.33;
+  if (pct >= 53) return 1.00;
+  if (pct >= 50) return 0.67;
   return 0.0;
 }
 
 function gpaStanding(gpa: number): string {
-  if (gpa >= 3.7) return "Dean's List";
-  if (gpa >= 3.0) return 'Good Standing';
-  if (gpa >= 2.5) return 'Satisfactory';
-  if (gpa >= 2.0) return 'Passing';
+  if (gpa >= 3.67) return "Dean's List";
+  if (gpa >= 3.00) return 'Good Standing';
+  if (gpa >= 2.00) return 'Satisfactory';
+  if (gpa >= 1.00) return 'Passing';
   return 'Needs Improvement';
 }
 
@@ -111,19 +118,19 @@ function GPATrendChart({ data, isDark }: {
   isDark: boolean;
 }) {
   const { width } = useWindowDimensions();
-  const chartWidth = width - 68; // 16px screen padding * 2 + 18px card padding * 2
+  const chartWidth = Math.min(width, 680) - 68;
   const chartHeight = 130;
   const padL = 28, padR = 10, padT = 12, padB = 28;
   const plotW = chartWidth - padL - padR;
   const plotH = chartHeight - padT - padB;
 
   const getX = (i: number) => padL + (data.length > 1 ? (i / (data.length - 1)) * plotW : plotW / 2);
-  const getY = (gpa: number) => padT + plotH - (gpa / 4) * plotH;
+  const getY = (gpa: number) => padT + plotH - (gpa / 4.33) * plotH;
   const points = data.map((d, i) => `${getX(i)},${getY(d.gpa)}`).join(' ');
 
   return (
     <Svg width={chartWidth} height={chartHeight}>
-      {[0, 1, 2, 3, 4].map((g) => {
+      {[0, 1, 2, 3, 4, 4.33].map((g) => {
         const y = getY(g);
         return (
           <G key={g}>
@@ -157,6 +164,7 @@ export default function GradesPage() {
   const uid = user?.uid ?? '';
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
+  const { isTablet } = useLayout();
   const [tab, setTab] = useState<Tab>('courses');
 
   // ── State ──
@@ -256,7 +264,7 @@ export default function GradesPage() {
     if (!psName.trim()) { Alert.alert('Error', 'Enter a semester name.'); return; }
     const gpa = parseFloat(psGpa);
     const credits = parseFloat(psCredits);
-    if (isNaN(gpa) || gpa < 0 || gpa > 4) { Alert.alert('Error', 'GPA must be between 0 and 4.'); return; }
+    if (isNaN(gpa) || gpa < 0 || gpa > 4.33) { Alert.alert('Error', 'GPA must be between 0 and 4.33.'); return; }
     if (isNaN(credits) || credits <= 0) { Alert.alert('Error', 'Enter valid credits.'); return; }
     savePast([...pastSemesters, { id: generateId(), name: psName.trim(), gpa, credits }]);
     setPsName(''); setPsGpa(''); setPsCredits('15'); setShowAddPast(false);
@@ -298,8 +306,8 @@ export default function GradesPage() {
     const cur = parseFloat(currentGrade);
     const curW = parseFloat(currentWeight);
     const goal = parseFloat(goalGrade);
-    const remW = parseFloat(remainingWeight);
-    if (isNaN(cur) || isNaN(curW) || isNaN(goal) || isNaN(remW) || remW <= 0) return null;
+    const remW = isNaN(curW) ? NaN : Math.max(0, 100 - curW);
+    if (isNaN(cur) || isNaN(curW) || isNaN(goal) || remW <= 0) return null;
     return (goal * (curW + remW) - cur * curW) / remW;
   })();
 
@@ -329,7 +337,7 @@ export default function GradesPage() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={[styles.scroll, contentContainer(isTablet)]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
 
         {/* ══ COURSES TAB ══ */}
         {tab === 'courses' && (
@@ -619,7 +627,7 @@ export default function GradesPage() {
                   />
                   <View style={styles.rowGap}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>GPA (0–4)</Text>
+                      <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>GPA (0–4.33)</Text>
                       <TextInput
                         style={[styles.input, { color: theme.text, borderColor: theme.border }]}
                         placeholder="3.50"
@@ -669,18 +677,21 @@ export default function GradesPage() {
 
             {/* GPA scale reference */}
             <View style={[styles.card, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>GPA Scale Reference</Text>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>TMU GPA Scale</Text>
               {[
-                { range: '93–100%', letter: 'A',  gpa: '4.0' },
-                { range: '90–92%',  letter: 'A-', gpa: '3.7' },
-                { range: '87–89%',  letter: 'B+', gpa: '3.3' },
-                { range: '83–86%',  letter: 'B',  gpa: '3.0' },
-                { range: '80–82%',  letter: 'B-', gpa: '2.7' },
-                { range: '77–79%',  letter: 'C+', gpa: '2.3' },
-                { range: '73–76%',  letter: 'C',  gpa: '2.0' },
-                { range: '70–72%',  letter: 'C-', gpa: '1.7' },
-                { range: '60–69%',  letter: 'D',  gpa: '1.0' },
-                { range: '< 60%',   letter: 'F',  gpa: '0.0' },
+                { range: '90–100%', letter: 'A+', gpa: '4.33' },
+                { range: '85–89%',  letter: 'A',  gpa: '4.00' },
+                { range: '80–84%',  letter: 'A-', gpa: '3.67' },
+                { range: '77–79%',  letter: 'B+', gpa: '3.33' },
+                { range: '73–76%',  letter: 'B',  gpa: '3.00' },
+                { range: '70–72%',  letter: 'B-', gpa: '2.67' },
+                { range: '67–69%',  letter: 'C+', gpa: '2.33' },
+                { range: '63–66%',  letter: 'C',  gpa: '2.00' },
+                { range: '60–62%',  letter: 'C-', gpa: '1.67' },
+                { range: '57–59%',  letter: 'D+', gpa: '1.33' },
+                { range: '53–56%',  letter: 'D',  gpa: '1.00' },
+                { range: '50–52%',  letter: 'D-', gpa: '0.67' },
+                { range: '< 50%',   letter: 'F',  gpa: '0.00' },
               ].map((row) => (
                 <View key={row.letter} style={styles.refRow}>
                   <Text style={[styles.refRange, { color: theme.textSecondary }]}>{row.range}</Text>
@@ -738,14 +749,13 @@ export default function GradesPage() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Remaining Weight %</Text>
-                  <TextInput
-                    style={[styles.input, { color: theme.text, borderColor: theme.border }]}
-                    placeholder="40"
-                    placeholderTextColor={theme.textSecondary}
-                    value={remainingWeight}
-                    onChangeText={setRemainingWeight}
-                    keyboardType="decimal-pad"
-                  />
+                  <View style={[styles.input, { borderColor: theme.border, justifyContent: 'center' }]}>
+                    <Text style={{ color: currentWeight ? theme.text : theme.textSecondary, fontSize: 15 }}>
+                      {currentWeight && !isNaN(parseFloat(currentWeight))
+                        ? `${Math.max(0, 100 - parseFloat(currentWeight)).toFixed(1)}`
+                        : '—'}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
@@ -761,7 +771,7 @@ export default function GradesPage() {
                     ? 'Goal is not mathematically achievable.'
                     : neededGrade < 0
                     ? 'You have already exceeded your goal!'
-                    : `on the remaining ${remainingWeight}% of the course`}
+                    : `on the remaining ${Math.max(0, 100 - parseFloat(currentWeight)).toFixed(1)}% of the course`}
                 </Text>
               </View>
             )}

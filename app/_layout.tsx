@@ -7,7 +7,7 @@ import { TutorialProvider, useTutorial } from '../context/TutorialContext';
 import { requestPermissions } from '../services/notificationService';
 
 function RootLayoutNav() {
-  const { user, emailVerified, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { initForUser } = useTutorial();
   const segments = useSegments();
   const router = useRouter();
@@ -19,12 +19,10 @@ function RootLayoutNav() {
     const inAuth = segments[0] === '(auth)';
     if (!user) {
       if (!inAuth) router.replace('/(auth)/sign-in');
-    } else if (!emailVerified) {
-      router.replace('/(auth)/verify-email');
     } else if (inAuth) {
       router.replace('/(app)');
     }
-  }, [user, emailVerified, loading, segments]);
+  }, [user, loading, segments]);
 
   useEffect(() => {
     if (user?.uid) initForUser(user.uid);

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { getTheme } from '../../constants/colors';
+import { useLayout, contentContainer } from '../../constants/layout';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const { isDark, themeMode, setThemeMode } = useTheme();
   const theme = getTheme(isDark);
+  const { isTablet } = useLayout();
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -30,7 +32,7 @@ export default function SettingsPage() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, contentContainer(isTablet)]}>
 
         {/* Account Section */}
         <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>ACCOUNT</Text>

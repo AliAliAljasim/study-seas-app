@@ -9,6 +9,13 @@ const listsCol  = (uid: string) => collection(db, 'users', uid, 'lists');
 const taskDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'tasks', id);
 const listDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'lists', id);
 
+// Firestore rejects undefined values — strip them before writing
+function strip<T extends object>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as T;
+}
+
 export async function getAllTasks(uid: string): Promise<Task[]> {
   const snap = await getDocs(tasksCol(uid));
   return snap.docs.map((d) => d.data() as Task);
@@ -28,11 +35,11 @@ export function subscribeToLists(uid: string, cb: (lists: TaskList[]) => void): 
 }
 
 export async function addTask(uid: string, task: Task): Promise<void> {
-  await setDoc(taskDoc(uid, task.id), task);
+  await setDoc(taskDoc(uid, task.id), strip(task));
 }
 
 export async function updateTask(uid: string, task: Task): Promise<void> {
-  await setDoc(taskDoc(uid, task.id), task);
+  await setDoc(taskDoc(uid, task.id), strip(task));
 }
 
 export async function deleteTask(uid: string, id: string): Promise<void> {
@@ -40,11 +47,11 @@ export async function deleteTask(uid: string, id: string): Promise<void> {
 }
 
 export async function addList(uid: string, list: TaskList): Promise<void> {
-  await setDoc(listDoc(uid, list.id), list);
+  await setDoc(listDoc(uid, list.id), strip(list));
 }
 
 export async function updateList(uid: string, list: TaskList): Promise<void> {
-  await setDoc(listDoc(uid, list.id), list);
+  await setDoc(listDoc(uid, list.id), strip(list));
 }
 
 export async function deleteList(uid: string, id: string): Promise<void> {

@@ -8,7 +8,7 @@ import { generateId } from '../models/taskModels';
 // ── Firestore paths ───────────────────────────────────
 const eggsCol  = (uid: string) => collection(db, 'users', uid, 'eggs');
 const fishCol  = (uid: string) => collection(db, 'users', uid, 'fish');
-const metaDoc  = (uid: string) => doc(db, 'users', uid, 'meta');
+const metaDoc  = (uid: string) => doc(db, 'users', uid, 'data', 'meta');
 const eggDoc   = (uid: string, id: string) => doc(db, 'users', uid, 'eggs', id);
 const fishDoc  = (uid: string, id: string) => doc(db, 'users', uid, 'fish', id);
 
@@ -35,14 +35,18 @@ async function loadAndCleanEggs(uid: string): Promise<FishEgg[]> {
   const valid: FishEgg[] = [];
   for (const d of snap.docs) {
     const egg = d.data() as FishEgg;
-    // Migrate legacy eggs missing readyAt
+    // Migrate legacy eggs missing readyAt or earnedAt
+    if (!egg.earnedAt) {
+      egg.earnedAt = (egg as any).awardedAt ?? new Date(now).toISOString();
+    }
     if (!egg.readyAt) {
       const earned = new Date(egg.earnedAt).getTime();
-      egg.readyAt   = new Date(earned + INCUBATION_MS).toISOString();
-      egg.expiresAt = new Date(earned + INCUBATION_MS + HATCH_WINDOW_MS).toISOString();
+      const base = isNaN(earned) ? now : earned;
+      egg.readyAt   = new Date(base + INCUBATION_MS).toISOString();
+      egg.expiresAt = new Date(base + INCUBATION_MS + HATCH_WINDOW_MS).toISOString();
       batch.set(d.ref, egg);
     }
-    if (new Date(egg.expiresAt).getTime() > now) {
+    if (new Date(egg.expiresAt ?? 0).getTime() > now) {
       valid.push(egg);
     } else {
       batch.delete(d.ref);

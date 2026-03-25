@@ -40,6 +40,8 @@ function OceanHeader({ width }: { width: number }) {
 export default function SignUpPage() {
   const { signUp } = useAuth();
   const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+  const contentWidth = Math.min(width, 480);
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -80,11 +82,11 @@ export default function SignUpPage() {
 
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[s.scroll, isTablet && { paddingHorizontal: Math.max(24, (width - 480) / 2) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
         {/* Ocean header */}
         <View style={{ marginHorizontal: -24 }}>
-          <OceanHeader width={width} />
+          <OceanHeader width={isTablet ? contentWidth : width} />
         </View>
 
         {/* Logo + title (overlaid on wave) */}

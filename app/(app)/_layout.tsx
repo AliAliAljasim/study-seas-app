@@ -4,12 +4,11 @@ import { useAuth } from '../../context/AuthContext';
 import TutorialOverlay from '../../components/TutorialOverlay';
 
 export default function AppLayout() {
-  const { user, emailVerified, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { isDark } = useTheme();
 
-  // Hard guard — if not signed in or email not verified, never render app screens
-  if (!loading && (!user || !emailVerified)) {
-    return <Redirect href={user ? '/(auth)/verify-email' : '/(auth)/sign-in'} />;
+  if (!loading && !user) {
+    return <Redirect href="/(auth)/sign-in" />;
   }
   const bg = isDark ? '#0D1B2A' : '#EEF5FB';
   const text = isDark ? '#E8F4FD' : '#142030';

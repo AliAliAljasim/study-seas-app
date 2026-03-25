@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop, Rect, Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -230,12 +231,17 @@ export default function HomePage() {
   }, [uid]);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || step !== 'done') return;
     checkDailyLoginEgg(uid).then((egg) => {
       if (egg) setShowDailyEggModal(true);
     });
     load();
-  }, [uid, load]);
+  }, [uid, step, load]);
+
+  // Re-fetch GPA whenever dashboard comes back into focus (e.g. after editing grades)
+  useFocusEffect(useCallback(() => {
+    if (uid) getWeeklyStats(uid).then(setWeeklyStats);
+  }, [uid]));
 
   const handleSignOut = () =>
     Alert.alert('Sign Out', 'Are you sure?', [
